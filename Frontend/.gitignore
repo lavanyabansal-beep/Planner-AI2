@@ -1,0 +1,36 @@
+# Node
+node_modules/
+
+# Vite
+dist/
+
+# env
+.env
+.env.local
+.vite
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor/OS
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Mac
+.DS_Store
+
+# Build outputs
+build/
+
+# Misc
+coverage/
+*.tgz
+
+# uploads from backend (served statically) - not tracked
+/uploads/
