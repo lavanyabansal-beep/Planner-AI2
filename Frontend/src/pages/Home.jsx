@@ -5,6 +5,8 @@ import TaskDetailsModal from '../components/task/TaskDetailsModal';
 import AddMemberModal from '../components/members/AddMemberModal';
 import Button from '../components/common/Button';
 import Spinner from '../components/common/Spinner';
+import Input from '../components/common/Input';
+import Modal from '../components/common/Modal';
 import useBoard from '../hooks/useBoard';
 
 const Home = () => {
@@ -13,6 +15,10 @@ const Home = () => {
   const [loadingBoards, setLoadingBoards] = useState(true);
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddMember, setShowAddMember] = useState(false);
+    const [showCreateBoard, setShowCreateBoard] = useState(false);
+    const [newBoardTitle, setNewBoardTitle] = useState('');
+    const [creatingBoard, setCreatingBoard] = useState(false);
+    const [createBoardError, setCreateBoardError] = useState('');
 
   const {
     board,
@@ -51,6 +57,25 @@ const Home = () => {
     fetchBoards();
   }, []);
 
+    const handleCreateBoard = async () => {
+      if (creatingBoard) return;
+      const title = newBoardTitle.trim() || 'Untitled Board';
+      setCreatingBoard(true);
+      setCreateBoardError('');
+      try {
+        const created = await boardsAPI.create({ title });
+        setBoards((prev) => [...prev, created]);
+        setSelectedBoardId(created._id);
+        setShowCreateBoard(false);
+        setNewBoardTitle('');
+      } catch (err) {
+        console.error('Failed to create board:', err);
+        setCreateBoardError(err?.response?.data?.error || err.message || 'Failed to create board');
+      } finally {
+        setCreatingBoard(false);
+      }
+    };
+
   const handleTaskClick = (task) => {
     setSelectedTask(task);
   };
@@ -70,26 +95,26 @@ const Home = () => {
     );
   }
 
-  if (boards.length === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-slate-900">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="w-16 h-16 mx-auto bg-gradient-to-br from-primary-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-500/20">
-            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          </div>
-          <div>
-            <h2 className="text-2xl font-semibold text-white mb-2">No boards yet</h2>
-            <p className="text-gray-400">Create your first board to start organizing tasks</p>
-          </div>
-          <Button variant="primary" size="lg">
-            Create Board
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // if (boards.length === 0) {
+  //   return (
+  //     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-slate-900">
+  //       <div className="text-center space-y-4 max-w-md">
+  //         <div className="w-16 h-16 mx-auto bg-gradient-to-br from-primary-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-500/20">
+  //           <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+  //             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+  //           </svg>
+  //         </div>
+  //         <div>
+  //           <h2 className="text-2xl font-semibold text-white mb-2">No boards yet</h2>
+  //           <p className="text-gray-400">Create your first board to start organizing tasks</p>
+  //         </div>
+  //         <Button variant="primary" size="lg" onClick={() => setShowCreateBoard(true)} ariaLabel="Create board">
+  //           Create Board
+  //         </Button>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-slate-900">
@@ -139,6 +164,20 @@ const Home = () => {
                 }
               >
                 <span className="hidden sm:inline">Add Member</span>
+              </Button>
+              <Button
+                onClick={() => setShowCreateBoard(true)}
+                variant="primary"
+                size="sm"
+                ariaLabel="Create board"
+                className="ml-2"
+                icon={
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                }
+              >
+                <span className="hidden sm:inline">New Board</span>
               </Button>
               
               <div className="flex items-center gap-2 px-3 py-2 bg-gray-700/50 rounded-lg border border-gray-600">
@@ -210,6 +249,30 @@ const Home = () => {
         onClose={() => setShowAddMember(false)}
         onMemberAdded={handleMemberAdded}
       />
+
+      <Modal isOpen={showCreateBoard} onClose={() => setShowCreateBoard(false)} title="Create Board" size="sm">
+        <div className="p-6 space-y-4">
+          <div className="space-y-2">
+            <Input
+              label="Board Title"
+              value={newBoardTitle}
+              onChange={(e) => setNewBoardTitle(e.target.value)}
+              placeholder="Enter board name"
+              autoFocus
+            />
+            {createBoardError && (
+              <p className="text-sm text-danger-500">{createBoardError}</p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setShowCreateBoard(false)} disabled={creatingBoard}>Cancel</Button>
+            <Button variant="primary" onClick={handleCreateBoard} disabled={creatingBoard}>
+              {creatingBoard ? 'Creating...' : 'Create'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -47,9 +47,49 @@ app.get('/api/boards', async (req, res) => {
 
 app.post('/api/boards', async (req, res) => {
   try {
-    const b = new Board(req.body)
-    await b.save()
-    res.status(201).json(b)
+    // Accept optional nested buckets/tasks in request body
+    const { title, teamId, buckets } = req.body || {};
+    if (!title) return res.status(400).json({ error: 'title is required' });
+
+    const b = new Board({ title, teamId });
+    await b.save();
+
+    const createdBuckets = [];
+    const createdTasks = [];
+
+    if (Array.isArray(buckets) && buckets.length > 0) {
+      for (let i = 0; i < buckets.length; i++) {
+        const bucketData = buckets[i] || {};
+        const bucketDoc = new Bucket({ boardId: b._id, title: bucketData.title || `Bucket ${i + 1}`, order: bucketData.order ?? i });
+        await bucketDoc.save();
+        createdBuckets.push(bucketDoc);
+
+        if (Array.isArray(bucketData.tasks) && bucketData.tasks.length > 0) {
+          for (const tRaw of bucketData.tasks) {
+            // Ensure required fields for task creation
+            const taskPayload = {
+              bucketId: bucketDoc._id,
+              title: tRaw.title || 'Untitled Task',
+              description: tRaw.description || '',
+              completed: !!tRaw.completed,
+              assignedTo: Array.isArray(tRaw.assignedTo) ? tRaw.assignedTo : [],
+              labels: Array.isArray(tRaw.labels) ? tRaw.labels : [],
+              priority: tRaw.priority || 'medium',
+              progress: tRaw.progress || 'not_started',
+              startDate: tRaw.startDate ? new Date(tRaw.startDate) : undefined,
+              dueDate: tRaw.dueDate ? new Date(tRaw.dueDate) : undefined,
+              checklist: Array.isArray(tRaw.checklist) ? tRaw.checklist : [],
+              attachments: Array.isArray(tRaw.attachments) ? tRaw.attachments : [],
+            };
+            const taskDoc = new Task(taskPayload);
+            await taskDoc.save();
+            createdTasks.push(taskDoc);
+          }
+        }
+      }
+    }
+
+    res.status(201).json({ board: b, buckets: createdBuckets, tasks: createdTasks });
   } catch (err) { res.status(400).json({ error: err.message }) }
 })
 
