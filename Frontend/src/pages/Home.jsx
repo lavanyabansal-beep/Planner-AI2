@@ -105,11 +105,11 @@ const Home = () => {
   //           </svg>
   //         </div>
   //         <div>
-  //           <h2 className="text-2xl font-semibold text-white mb-2">No boards yet</h2>
-  //           <p className="text-gray-400">Create your first board to start organizing tasks</p>
+  //           <h2 className="text-2xl font-semibold text-white mb-2">No projects yet</h2>
+  //           <p className="text-gray-400">Create your first project to start organizing tasks</p>
   //         </div>
-  //         <Button variant="primary" size="lg" onClick={() => setShowCreateBoard(true)} ariaLabel="Create board">
-  //           Create Board
+  //         <Button variant="primary" size="lg" onClick={() => setShowCreateBoard(true)} ariaLabel="Create project">
+  //           Create Project
   //         </Button>
   //       </div>
   //     </div>
@@ -169,7 +169,7 @@ const Home = () => {
                 onClick={() => setShowCreateBoard(true)}
                 variant="primary"
                 size="sm"
-                ariaLabel="Create board"
+                ariaLabel="Create project"
                 className="ml-2"
                 icon={
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -177,7 +177,7 @@ const Home = () => {
                   </svg>
                 }
               >
-                <span className="hidden sm:inline">New Board</span>
+                <span className="hidden sm:inline">New Project</span>
               </Button>
               
               <div className="flex items-center gap-2 px-3 py-2 bg-gray-700/50 rounded-lg border border-gray-600">
@@ -250,14 +250,14 @@ const Home = () => {
         onMemberAdded={handleMemberAdded}
       />
 
-      <Modal isOpen={showCreateBoard} onClose={() => setShowCreateBoard(false)} title="Create Board" size="sm">
+      <Modal isOpen={showCreateBoard} onClose={() => setShowCreateBoard(false)} title="Create Project" size="sm">
         <div className="p-6 space-y-4">
           <div className="space-y-2">
             <Input
-              label="Board Title"
+              label="Project Title"
               value={newBoardTitle}
               onChange={(e) => setNewBoardTitle(e.target.value)}
-              placeholder="Enter board name"
+              placeholder="Enter project name"
               autoFocus
             />
             {createBoardError && (
