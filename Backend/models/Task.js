@@ -31,8 +31,8 @@ const TaskSchema = new mongoose.Schema({
   dueDate: { type: Date },
   repeat: { type: String, default: 'does_not_repeat' },
   
-  // Activity type for task management
-  activityType: { type: String, default: 'One-Time' },
+  // Activity type for task management (SprintView chart)
+  activityType: { type: String, default: 'ONE_TIME' },
   estimatedDays: { type: Number, default: 0 },
   
   // Subtasks

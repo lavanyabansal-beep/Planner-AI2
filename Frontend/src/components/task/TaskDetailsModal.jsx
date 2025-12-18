@@ -20,14 +20,24 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
     checklist: [],
     attachments: [],
     completed: false,
-    activityType: 'One-Time',
+    activityType: 'ONE_TIME',
     estimatedDays: 0,
   });
   const [newChecklistItem, setNewChecklistItem] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [activityTypes, setActivityTypes] = useState([]);
   const [showNewActivityType, setShowNewActivityType] = useState(false);
   const [newActivityType, setNewActivityType] = useState('');
+
+  // SprintView Chart Activity Types
+  const SPRINTVIEW_ACTIVITY_TYPES = {
+    ONE_TIME: { label: '🎯 One-Time', description: 'Standard task with fixed duration' },
+    CONTINUOUS: { label: '♾️ Continuous', description: 'Task that runs until project end' },
+    API_1_DAY: { label: '⚡ API / 1-Day', description: 'API integration (always 1 day)' },
+    RECURRING_WEEKLY: { label: '🔄 Recurring Weekly', description: 'Task that repeats weekly (1 day per week)' },
+    MILESTONE: { label: '🏁 Milestone', description: 'Zero-duration checkpoint' },
+    BUFFER: { label: '🛡️ Buffer', description: 'Risk padding (blocks owner availability)' },
+    PARALLEL_ALLOWED: { label: '🔀 Parallel Allowed', description: 'Can overlap with other tasks for same owner' }
+  };
 
   useEffect(() => {
     if (task) {
@@ -54,14 +64,9 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
         checklist: task.checklist || [],
         attachments: task.attachments || [],
         completed: task.completed || false,
-        activityType: task.activityType || 'One-Time',
+        activityType: task.activityType || 'ONE_TIME',
         estimatedDays: task.estimatedDays || 0,
       });
-
-      // Add task's activity type to list if not already present
-      if (task.activityType && !activityTypes.includes(task.activityType)) {
-        setActivityTypes(prev => [...prev, task.activityType]);
-      }
     }
   }, [task, users]);
 
@@ -115,33 +120,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
     });
   };
 
-  const handleAddActivityType = (e) => {
-    e.preventDefault();
-    const trimmed = newActivityType.trim();
-    if (trimmed && !activityTypes.includes(trimmed)) {
-      setActivityTypes(prev => [...prev, trimmed]);
-      setFormData({ ...formData, activityType: trimmed });
-      setNewActivityType('');
-      setShowNewActivityType(false);
-    }
-  };
 
-  const handleDeleteActivityType = (typeToDelete) => {
-    // Prevent deletion of workflow types
-    const systemTypes = ['One-Time', 'Continuous', 'API / 1-Day'];
-    if (systemTypes.includes(typeToDelete)) {
-      alert('Cannot delete workflow activity types');
-      return;
-    }
-
-    if (confirm(`Delete activity type "${typeToDelete}"?`)) {
-      setActivityTypes(prev => prev.filter(t => t !== typeToDelete));
-      // If the deleted type was selected, switch to One-Time
-      if (formData.activityType === typeToDelete) {
-        setFormData({ ...formData, activityType: 'One-Time' });
-      }
-    }
-  };
 
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -251,29 +230,14 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-4">
             <span className="text-lg">
-              {formData.activityType?.toLowerCase().includes('one-time') && '🎯'}
-              {formData.activityType?.toLowerCase().includes('continuous') && '♾️'}
-              {(formData.activityType?.toLowerCase().includes('api') || formData.activityType?.toLowerCase().includes('1-day')) && '⚡'}
-              {!formData.activityType?.toLowerCase().includes('one-time') && 
-               !formData.activityType?.toLowerCase().includes('continuous') && 
-               !formData.activityType?.toLowerCase().includes('api') && 
-               !formData.activityType?.toLowerCase().includes('1-day') && '💻'}
+              {SPRINTVIEW_ACTIVITY_TYPES[formData.activityType]?.label?.split(' ')[0] || '💻'}
             </span>
-            <h3 className="font-semibold text-white">Activity Configuration</h3>
+            <h3 className="font-semibold text-white">SprintView Chart Configuration</h3>
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label htmlFor="activityType" className="form-label mb-0">Activity Type</label>
-                <button
-                  type="button"
-                  onClick={() => setShowNewActivityType(!showNewActivityType)}
-                  className="text-xs text-primary-400 hover:text-primary-300 font-medium"
-                >
-                  + Add New
-                </button>
-              </div>
+              <label htmlFor="activityType" className="form-label">Activity Type</label>
               <select
                 id="activityType"
                 value={formData.activityType}
@@ -282,92 +246,16 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
                 }}
                 className="form-select w-full"
               >
-                <optgroup label="Workflow Types">
-                  <option value="One-Time">🎯 One-Time (Sequential)</option>
-                  <option value="Continuous">♾️ Continuous (Parallel)</option>
-                  <option value="API / 1-Day">⚡ API / 1-Day (Quick)</option>
-                </optgroup>
-                {activityTypes.length > 0 && (
-                  <optgroup label="Custom Types">
-                    {activityTypes.filter(t => !['One-Time', 'Continuous', 'API / 1-Day'].includes(t)).map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </optgroup>
-                )}
+                {Object.entries(SPRINTVIEW_ACTIVITY_TYPES).map(([key, config]) => (
+                  <option key={key} value={key}>
+                    {config.label}
+                  </option>
+                ))}
               </select>
               
               {/* Activity Type Description */}
               <div className="mt-2 text-xs text-gray-400">
-                {formData.activityType?.toLowerCase().includes('one-time') && (
-                  <p>⚙️ Runs once, starts after dependencies complete</p>
-                )}
-                {formData.activityType?.toLowerCase().includes('continuous') && (
-                  <p>🔄 Runs in parallel, spans multiple weeks</p>
-                )}
-                {(formData.activityType?.toLowerCase().includes('api') || formData.activityType?.toLowerCase().includes('1-day')) && (
-                  <p>⚡ Short duration, can repeat across weeks</p>
-                )}
-              </div>
-              
-              {showNewActivityType && (
-                <form onSubmit={handleAddActivityType} className="mt-2 flex gap-2">
-                  <input
-                    type="text"
-                    value={newActivityType}
-                    onChange={(e) => setNewActivityType(e.target.value)}
-                    placeholder="Enter new activity type"
-                    className="flex-1 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white placeholder:text-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    autoFocus
-                  />
-                  <button
-                    type="submit"
-                    className="px-3 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700 transition-colors"
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowNewActivityType(false);
-                      setNewActivityType('');
-                    }}
-                    className="px-3 py-2 bg-gray-700 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )}
-              
-              {/* Custom Activity Types Management - ALWAYS VISIBLE */}
-              <div className="mt-4 p-3 bg-gray-900/50 border border-gray-700 rounded-lg">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-white">Your Custom Types</h4>
-                  <span className="text-xs text-gray-500">
-                    {activityTypes.filter(t => !['One-Time', 'Continuous', 'API / 1-Day'].includes(t)).length} custom
-                  </span>
-                </div>
-                
-                {activityTypes.filter(t => !['One-Time', 'Continuous', 'API / 1-Day'].includes(t)).length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {activityTypes
-                      .filter(t => !['One-Time', 'Continuous', 'API / 1-Day'].includes(t))
-                      .map(type => (
-                        <button
-                          key={type}
-                          onClick={() => handleDeleteActivityType(type)}
-                          className="group flex items-center gap-2 px-3 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/60 rounded-lg text-sm text-red-400 hover:text-red-300 transition-all font-medium"
-                          title={`Click to delete "${type}"`}
-                        >
-                          <span>{type}</span>
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500 italic">No custom activity types yet. Click "+ Add New" above to create one.</p>
-                )}
+                {SPRINTVIEW_ACTIVITY_TYPES[formData.activityType]?.description}
               </div>
             </div>
 
@@ -384,7 +272,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
                 placeholder="0"
               />
               <p className="mt-1 text-xs text-gray-400">
-                📊 Used for Gantt chart timeline calculation
+                📊 Used for SprintView chart timeline calculation
               </p>
             </div>
           </div>

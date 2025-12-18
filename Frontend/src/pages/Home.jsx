@@ -3,6 +3,7 @@ import { boardsAPI } from '../services/api';
 import BoardView from '../components/board/BoardView';
 import TaskDetailsModal from '../components/task/TaskDetailsModal';
 import AddMemberModal from '../components/members/AddMemberModal';
+import SprintViewModal from '../components/sprintview/SprintViewModal';
 import Button from '../components/common/Button';
 import Spinner from '../components/common/Spinner';
 import Input from '../components/common/Input';
@@ -15,6 +16,7 @@ const Home = () => {
   const [loadingBoards, setLoadingBoards] = useState(true);
   const [selectedTask, setSelectedTask] = useState(null);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [showSprintView, setShowSprintView] = useState(false);
     const [showCreateBoard, setShowCreateBoard] = useState(false);
     const [newBoardTitle, setNewBoardTitle] = useState('');
     const [creatingBoard, setCreatingBoard] = useState(false);
@@ -153,6 +155,19 @@ const Home = () => {
             {/* Right section */}
             <div className="flex items-center gap-3">
               <Button 
+                onClick={() => setShowSprintView(true)} 
+                variant="secondary" 
+                size="sm"
+                ariaLabel="View SprintView chart"
+                icon={
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                }
+              >
+                <span className="hidden sm:inline">SprintView</span>
+              </Button>
+              <Button 
                 onClick={() => setShowAddMember(true)} 
                 variant="secondary" 
                 size="sm"
@@ -247,6 +262,13 @@ const Home = () => {
         isOpen={showAddMember}
         onClose={() => setShowAddMember(false)}
         onMemberAdded={handleMemberAdded}
+      />
+
+      <SprintViewModal
+        boardId={selectedBoardId}
+        boardName={board?.title}
+        isOpen={showSprintView}
+        onClose={() => setShowSprintView(false)}
       />
 
       <Modal isOpen={showCreateBoard} onClose={() => setShowCreateBoard(false)} title="Create Project" size="sm">
