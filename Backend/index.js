@@ -12,6 +12,7 @@ const Bucket = require('./models/Bucket')
 const Task = require('./models/Task')
 const { scheduleSprintViewTasks, expandRecurringTask, validateTasks, ACTIVITY_TYPES } = require('./utils/sprintviewScheduler')
 const { expandToUserDayView, expandToFlatGrid } = require('./utils/userDayExpander')
+const { scheduleForFinalReport } = require('./utils/finalReportScheduler')
 
 const app = express()
 app.use(cors({ origin: 'http://localhost:5174' }))
@@ -494,6 +495,49 @@ app.post('/api/sprintview/schedule-with-day-view', (req, res) => {
     console.error('Combined schedule error:', error);
     res.status(500).json({ 
       error: 'Scheduling failed',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * GET /api/reports/project-final/:boardId
+ * Final Project Report - Shows ALL team members with their tasks
+ */
+app.get('/api/reports/project-final/:boardId', async (req, res) => {
+  try {
+    const { boardId } = req.params;
+
+    const board = await Board.findById(boardId);
+    if (!board) {
+      return res.status(404).json({ error: 'Board not found' });
+    }
+
+    // Get all buckets and tasks
+    const buckets = await Bucket.find({ boardId }).lean();
+    const bucketIds = buckets.map(b => b._id);
+    const tasks = await Task.find({ bucketId: { $in: bucketIds } })
+      .populate('assignedTo', 'name email')
+      .lean();
+
+    // Get ALL users to show in report (including those without tasks)
+    const allUsers = await User.find().lean();
+
+    // Generate report with all users
+    const report = scheduleForFinalReport(tasks, allUsers);
+
+    report.boardInfo = {
+      boardId: board._id,
+      boardName: board.name,
+      totalTasks: tasks.length,
+      totalBuckets: buckets.length
+    };
+
+    res.json(report);
+  } catch (error) {
+    console.error('Final report error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate final report',
       message: error.message 
     });
   }
