@@ -35,6 +35,12 @@ const TaskSchema = new mongoose.Schema({
   activityType: { type: String, default: 'ONE_TIME' },
   estimatedDays: { type: Number, default: 0 },
   
+  // Final Project Report fields
+  actualStartDate: { type: Date },
+  actualEndDate: { type: Date },
+  completedAt: { type: Date },
+  isFrozenInReport: { type: Boolean, default: false },
+  
   // Subtasks
   subtasks: [SubtaskSchema],
   
