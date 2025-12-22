@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { ACTIVITY_TYPE_CONFIG } from '../../utils/sprintviewConfig';
+import { formatDate } from '../../utils/helpers';
 
 /**
  * User-Day SprintView Chart
@@ -153,7 +154,7 @@ const UserDaySprintView = ({
         {isHovered && !isEmpty && (
           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl whitespace-nowrap z-50 pointer-events-none max-w-xs">
             <div className="font-semibold mb-1">
-              {day.dayName}, Day {day.absoluteDay}
+              {day.date ? formatDate(day.date) : `${day.dayName}, Day ${day.absoluteDay}`}
             </div>
             {day.tasks.map((task, idx) => (
               <div key={idx} className="text-gray-200 mt-1 border-t border-gray-700 pt-1">
@@ -306,7 +307,9 @@ const UserDaySprintView = ({
                   }`}
                 >
                   <div className="text-xs font-medium text-gray-700">{day.dayName}</div>
-                  <div className="text-xs text-gray-400">{day.absoluteDay}</div>
+                  <div className="text-xs text-gray-400">
+                    {day.date ? new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : day.absoluteDay}
+                  </div>
                 </div>
               ))
             )}

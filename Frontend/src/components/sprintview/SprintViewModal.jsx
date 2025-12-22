@@ -56,7 +56,7 @@ const SprintViewModal = ({ boardId, boardName, isOpen, onClose, selectedMemberId
         });
 
         // Load user-day view with filtered tasks
-        await loadUserDayView(filteredTasks, data.totalProjectWeeks);
+        await loadUserDayView(filteredTasks, data.totalProjectWeeks, data.projectStartDate);
       } else {
         setSprintViewData(data);
         setUserDayData(null);
@@ -69,11 +69,12 @@ const SprintViewModal = ({ boardId, boardName, isOpen, onClose, selectedMemberId
     }
   };
 
-  const loadUserDayView = async (scheduledTasks, totalProjectWeeks) => {
+  const loadUserDayView = async (scheduledTasks, totalProjectWeeks, projectStartDate) => {
     try {
       const response = await api.post('/api/sprintview/user-day-view', {
         scheduledTasks,
         totalProjectWeeks,
+        projectStartDate,
         format: 'nested'
       });
 

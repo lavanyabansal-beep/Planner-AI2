@@ -23,10 +23,37 @@ const SprintViewView = () => {
   const [boardInfo, setBoardInfo] = useState(null);
   const [expandRecurring, setExpandRecurring] = useState(false);
   const [showStats, setShowStats] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   useEffect(() => {
     loadSprintViewData();
   }, [boardId, expandRecurring]);
+
+  // Auto-refresh every 30 seconds when enabled
+  useEffect(() => {
+    if (!autoRefresh) return;
+    
+    const interval = setInterval(() => {
+      console.log('Auto-refreshing SprintView data...');
+      loadSprintViewData();
+    }, 30000); // 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [autoRefresh, boardId, expandRecurring]);
+
+  // Refresh when tab becomes visible again (user might have updated tasks)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && autoRefresh) {
+        console.log('Tab became visible, refreshing SprintView...');
+        loadSprintViewData();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [autoRefresh, boardId, expandRecurring]);
 
   const loadSprintViewData = async () => {
     try {
@@ -51,6 +78,8 @@ const SprintViewView = () => {
       if (response.boardInfo) {
         setBoardInfo(response.boardInfo);
       }
+      
+      setLastUpdated(new Date());
     } catch (err) {
       console.error('Failed to load SprintView data:', err);
       setError(err.response?.data?.error || 'Failed to generate SprintView chart');
@@ -142,11 +171,25 @@ const SprintViewView = () => {
                 </h1>
                 <p className="text-sm text-gray-600 mt-0.5">
                   Timeline view • {stats.totalTasks} tasks • {stats.totalWeeks} weeks
+                  {lastUpdated && (
+                    <span className="ml-2 text-gray-500">
+                      • Updated {lastUpdated.toLocaleTimeString()}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh}
+                  onChange={(e) => setAutoRefresh(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                Auto-refresh
+              </label>
               <Button
                 variant="secondary"
                 size="sm"
@@ -164,8 +207,9 @@ const SprintViewView = () => {
               <Button
                 size="sm"
                 onClick={handleRefresh}
+                disabled={loading}
               >
-                🔄 Refresh
+                {loading ? '⏳' : '🔄'} Refresh
               </Button>
             </div>
           </div>
@@ -249,6 +293,7 @@ const SprintViewView = () => {
             scheduledTasks={sprintviewData.scheduledTasks}
             totalProjectWeeks={sprintviewData.totalProjectWeeks}
             ownerTimelines={sprintviewData.ownerTimelines}
+            projectStartDate={sprintviewData.projectStartDate}
             showLegend={true}
             compact={false}
           />

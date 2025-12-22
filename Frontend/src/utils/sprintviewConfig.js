@@ -204,3 +204,193 @@ export function downloadCSV(csv, filename = 'sprintview-chart.csv') {
   link.click();
   document.body.removeChild(link);
 }
+
+/**
+ * Check if a task is overdue
+ * @param {Object} task - Task object with dueDate and completed status
+ * @param {Date} currentDate - Current date to compare against
+ * @returns {boolean} True if task is overdue
+ */
+export function isTaskOverdue(task, currentDate = new Date()) {
+  if (!task.dueDate) {
+    console.log('Task has no dueDate:', task.taskName || task.title);
+    return false;
+  }
+  
+  if (task.completed) {
+    console.log('Task is completed:', task.taskName || task.title);
+    return false;
+  }
+  
+  const dueDateObj = typeof task.dueDate === 'string' ? new Date(task.dueDate) : new Date(task.dueDate);
+  const currentDateObj = typeof currentDate === 'string' ? new Date(currentDate) : new Date(currentDate);
+  
+  // Reset time to start of day for comparison
+  dueDateObj.setHours(0, 0, 0, 0);
+  currentDateObj.setHours(0, 0, 0, 0);
+  
+  const isOverdue = currentDateObj > dueDateObj;
+  
+  console.log(`Overdue check for "${task.taskName || task.title}":`, {
+    dueDate: dueDateObj.toISOString(),
+    currentDate: currentDateObj.toISOString(),
+    isOverdue,
+    completed: task.completed
+  });
+  
+  return isOverdue;
+}
+
+/**
+ * Overdue highlight color
+ */
+export const OVERDUE_COLOR = '#FF4D4F';
+
+/**
+ * ==============================
+ * DATE UTILITY FUNCTIONS
+ * ==============================
+ * Centralized date calculations for accurate timeline positioning
+ */
+
+/**
+ * Normalize date to midnight UTC for consistent comparisons
+ * @param {Date|string} date - Date to normalize
+ * @returns {Date} Normalized date at midnight
+ */
+export function normalizeDate(date) {
+  const d = typeof date === 'string' ? new Date(date) : new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Calculate difference in calendar days between two dates
+ * @param {Date|string} startDate - Start date
+ * @param {Date|string} endDate - End date
+ * @returns {number} Number of days (can be negative if endDate < startDate)
+ */
+export function getCalendarDaysDiff(startDate, endDate) {
+  const start = normalizeDate(startDate);
+  const end = normalizeDate(endDate);
+  const diffMs = end - start;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Calculate working days between two dates (excluding weekends)
+ * @param {Date|string} startDate - Start date
+ * @param {Date|string} endDate - End date
+ * @returns {number} Number of working days
+ */
+export function getWorkingDaysDiff(startDate, endDate) {
+  const start = normalizeDate(startDate);
+  const end = normalizeDate(endDate);
+  
+  let workingDays = 0;
+  const current = new Date(start);
+  
+  while (current <= end) {
+    const dayOfWeek = current.getDay();
+    // 0 = Sunday, 6 = Saturday
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      workingDays++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  
+  return workingDays;
+}
+
+/**
+ * Add working days to a date (skipping weekends)
+ * @param {Date|string} startDate - Start date
+ * @param {number} days - Number of working days to add (supports fractional days)
+ * @returns {Date} Resulting date
+ */
+export function addWorkingDays(startDate, days) {
+  const date = normalizeDate(startDate);
+  // For fractional days (e.g., 0.5), round up to show at least one day
+  let remaining = Math.ceil(days);
+  
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      remaining--;
+    }
+  }
+  
+  return date;
+}
+
+/**
+ * Convert a date to a day number in the project timeline
+ * @param {Date|string} date - Date to convert
+ * @param {Date|string} projectStartDate - Project start date
+ * @returns {number} Day number (1-based, working days only)
+ */
+export function dateToProjectDay(date, projectStartDate) {
+  const workingDays = getWorkingDaysDiff(projectStartDate, date);
+  return Math.max(1, workingDays + 1); // 1-based, minimum day 1
+}
+
+/**
+ * Convert a project day number to a calendar date
+ * @param {number} dayNumber - Day number (1-based)
+ * @param {Date|string} projectStartDate - Project start date
+ * @returns {Date} Calendar date
+ */
+export function projectDayToDate(dayNumber, projectStartDate) {
+  const start = normalizeDate(projectStartDate);
+  return addWorkingDays(start, dayNumber - 1);
+}
+
+/**
+ * Check if a date is a working day (Mon-Fri)
+ * @param {Date|string} date - Date to check
+ * @returns {boolean} True if working day
+ */
+export function isWorkingDay(date) {
+  const d = normalizeDate(date);
+  const dayOfWeek = d.getDay();
+  return dayOfWeek !== 0 && dayOfWeek !== 6;
+}
+
+/**
+ * Get the project start date from scheduled tasks
+ * Falls back to a default if no tasks have startDate
+ * @param {Array} tasks - Array of scheduled tasks
+ * @returns {Date} Project start date
+ */
+export function getProjectStartDate(tasks) {
+  if (!tasks || tasks.length === 0) {
+    return normalizeDate(new Date()); // Default to today
+  }
+  
+  // Find earliest startDate
+  const datesWithStartDate = tasks
+    .filter(t => t.startDate)
+    .map(t => normalizeDate(t.startDate));
+  
+  if (datesWithStartDate.length === 0) {
+    return normalizeDate(new Date()); // Default to today
+  }
+  
+  return new Date(Math.min(...datesWithStartDate));
+}
+
+/**
+ * Calculate which day a task's due date falls on relative to task timeline
+ * @param {Object} task - Task with startDate, endDate or dueDate
+ * @param {Date} projectStartDate - Project start date
+ * @returns {number|null} Day number where due date occurs, or null
+ */
+export function calculateDueDateDay(task, projectStartDate) {
+  if (!task.dueDate) return null;
+  
+  const dueDate = normalizeDate(task.dueDate);
+  const dueDateDay = dateToProjectDay(dueDate, projectStartDate);
+  
+  return dueDateDay;
+}

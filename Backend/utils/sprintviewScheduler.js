@@ -12,6 +12,74 @@
 const WORKING_DAYS_PER_WEEK = 5;
 
 /**
+ * Get the earliest date from tasks to use as project start
+ * @param {Array} tasks - Array of task objects
+ * @returns {Date} Project start date
+ */
+function getProjectStartDate(tasks) {
+  const datesWithStartDate = tasks
+    .filter(t => t.startDate)
+    .map(t => new Date(t.startDate));
+  
+  if (datesWithStartDate.length > 0) {
+    return new Date(Math.min(...datesWithStartDate));
+  }
+  
+  // Default to today if no start dates
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+/**
+ * Convert a date to working day number from project start
+ * @param {Date|string} date - Date to convert
+ * @param {Date} projectStartDate - Project start date
+ * @returns {number} Working day number (1-based)
+ */
+function dateToWorkingDay(date, projectStartDate) {
+  const d = new Date(date);
+  const start = new Date(projectStartDate);
+  d.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0);
+  
+  let workingDays = 0;
+  const current = new Date(start);
+  
+  while (current < d) {
+    const dayOfWeek = current.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      workingDays++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  
+  return workingDays + 1; // 1-based
+}
+
+/**
+ * Add working days to a date
+ * @param {Date} startDate - Start date
+ * @param {number} days - Number of working days to add (supports fractional days)
+ * @returns {Date} Resulting date
+ */
+function addWorkingDays(startDate, days) {
+  const date = new Date(startDate);
+  // For fractional days (e.g., 0.5), round up to show at least one day
+  let remaining = Math.ceil(days);
+  
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      remaining--;
+    }
+  }
+  
+  return date;
+}
+
+/**
  * Activity Types and their scheduling behavior
  */
 const ACTIVITY_TYPES = {
@@ -82,10 +150,14 @@ function scheduleSprintViewTasks(tasks) {
       scheduledTasks: [],
       totalProjectDays: 0,
       totalProjectWeeks: 0,
-      ownerTimelines: {}
+      ownerTimelines: {},
+      projectStartDate: new Date()
     };
   }
 
+  // Determine project start date from tasks
+  const projectStartDate = getProjectStartDate(tasks);
+  
   // Track next available day for each owner
   const ownerAvailability = {};
   
@@ -101,7 +173,9 @@ function scheduleSprintViewTasks(tasks) {
       taskName,
       tentativeEtaDays,
       activityType,
-      taskOwner
+      taskOwner,
+      startDate,
+      dueDate
     } = task;
 
     // Initialize owner availability
@@ -114,37 +188,52 @@ function scheduleSprintViewTasks(tasks) {
 
     // Determine start day
     let startDay;
+    let actualStartDate;
     
-    if (canOverlap(activityType)) {
+    if (startDate) {
+      // Use actual start date from task
+      actualStartDate = new Date(startDate);
+      startDay = dateToWorkingDay(actualStartDate, projectStartDate);
+    } else if (canOverlap(activityType)) {
       // PARALLEL_ALLOWED: Start at Day 1, doesn't block owner
       startDay = 1;
+      actualStartDate = new Date(projectStartDate);
     } else {
       // Sequential: Start at next available day for this owner
       startDay = ownerAvailability[taskOwner];
+      actualStartDate = addWorkingDays(projectStartDate, startDay - 1);
     }
 
     // Calculate end day
     let endDay;
+    let actualEndDate;
+    
+    // For fractional days (0.5), ensure at least 1 day duration for rendering
+    const effectiveDuration = Math.max(1, Math.ceil(durationDays));
     
     if (activityType === ACTIVITY_TYPES.MILESTONE) {
       // Milestone: No duration
       endDay = startDay;
+      actualEndDate = actualStartDate;
     } else if (activityType === ACTIVITY_TYPES.CONTINUOUS) {
       // Continuous: Mark for later adjustment to project end
-      endDay = startDay + durationDays - 1;
+      endDay = startDay + effectiveDuration - 1;
+      actualEndDate = addWorkingDays(actualStartDate, effectiveDuration - 1);
       continuousTasks.push(scheduledTasks.length); // Store index
     } else if (activityType === ACTIVITY_TYPES.RECURRING_WEEKLY) {
       // Recurring: 1 day per week, doesn't block full week
       endDay = startDay; // Each occurrence is 1 day
+      actualEndDate = actualStartDate;
     } else {
       // ONE_TIME, BUFFER, API_1_DAY
-      endDay = startDay + durationDays - 1;
+      endDay = startDay + effectiveDuration - 1;
+      actualEndDate = addWorkingDays(actualStartDate, effectiveDuration - 1);
     }
 
-    // Update owner availability (only if not parallel)
-    if (!canOverlap(activityType) && activityType !== ACTIVITY_TYPES.RECURRING_WEEKLY) {
+    // Update owner availability (only if not parallel and no explicit start date)
+    if (!startDate && !canOverlap(activityType) && activityType !== ACTIVITY_TYPES.RECURRING_WEEKLY) {
       ownerAvailability[taskOwner] = endDay + 1;
-    } else if (activityType === ACTIVITY_TYPES.RECURRING_WEEKLY) {
+    } else if (!startDate && activityType === ACTIVITY_TYPES.RECURRING_WEEKLY) {
       // Recurring weekly: Increment by 1 day (doesn't block full duration)
       ownerAvailability[taskOwner] = startDay + 1;
     }
@@ -153,17 +242,21 @@ function scheduleSprintViewTasks(tasks) {
     const startWeek = dayToWeek(startDay);
     const endWeek = dayToWeek(endDay);
 
-    // Create scheduled task
+    // Create scheduled task - preserve all original fields + add calculated dates
     const scheduledTask = {
+      ...task, // Preserve all original fields (dueDate, completed, taskId, etc.)
       taskName,
       taskOwner,
       activityType,
       tentativeEtaDays,
-      durationDays,
+      durationDays: durationDays, // Original duration (can be 0.5)
+      effectiveDuration, // Rounded up duration for scheduling
       startDay,
       endDay,
       startWeek,
-      endWeek
+      endWeek,
+      calculatedStartDate: actualStartDate.toISOString(),
+      calculatedEndDate: actualEndDate.toISOString()
     };
 
     scheduledTasks.push(scheduledTask);
@@ -196,6 +289,7 @@ function scheduleSprintViewTasks(tasks) {
     totalProjectDays,
     totalProjectWeeks,
     ownerTimelines,
+    projectStartDate: projectStartDate.toISOString(),
     metadata: {
       totalTasks: tasks.length,
       workingDaysPerWeek: WORKING_DAYS_PER_WEEK,
