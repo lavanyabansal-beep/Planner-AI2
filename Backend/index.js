@@ -324,7 +324,17 @@ app.post('/api/sprintview/schedule-from-board/:boardId', async (req, res) => {
     // Convert database tasks to SprintView format
     // If task has multiple users, create separate task entries for each user
     const sprintviewTasks = [];
+    console.log('=== Processing tasks for SprintView ===');
+    console.log('Total tasks found:', tasks.length);
+    
     tasks.forEach(task => {
+      console.log(`\nTask: "${task.title}"`);
+      console.log('  - estimatedDays:', task.estimatedDays);
+      console.log('  - assignedTo:', task.assignedTo);
+      console.log('  - activityType:', task.activityType);
+      console.log('  - startDate:', task.startDate);
+      console.log('  - dueDate:', task.dueDate);
+      
       const owners = task.assignedTo && task.assignedTo.length > 0 
         ? task.assignedTo.map(user => user.name)
         : ['Unassigned'];
@@ -338,12 +348,18 @@ app.post('/api/sprintview/schedule-from-board/:boardId', async (req, res) => {
           taskOwner: owner,
           taskId: task._id.toString(),
           priority: task.priority,
+          startDate: task.startDate,
           dueDate: task.dueDate,
+          completed: task.completed || false,
+          completedDate: task.progress === 'completed' ? task.updatedAt : null,
           isMultiUser: owners.length > 1,
           allOwners: owners
         });
       });
     });
+    
+    console.log('Total sprintview tasks created:', sprintviewTasks.length);
+    console.log('=== End task processing ===\n');
 
     // Schedule
     const result = scheduleSprintViewTasks(sprintviewTasks);
@@ -397,6 +413,7 @@ app.get('/api/sprintview/activity-types', (req, res) => {
  * Body:
  * - scheduledTasks: Array of scheduled tasks (from schedule endpoint)
  * - totalProjectWeeks: Total project duration
+ * - projectStartDate: (optional) Project start date for calendar date calculation
  * - format: 'nested' (default) or 'flat'
  * 
  * Response:
@@ -407,7 +424,7 @@ app.get('/api/sprintview/activity-types', (req, res) => {
  */
 app.post('/api/sprintview/user-day-view', (req, res) => {
   try {
-    const { scheduledTasks, totalProjectWeeks, format = 'nested' } = req.body;
+    const { scheduledTasks, totalProjectWeeks, projectStartDate, format = 'nested' } = req.body;
 
     if (!scheduledTasks || !Array.isArray(scheduledTasks)) {
       return res.status(400).json({ 
@@ -421,9 +438,11 @@ app.post('/api/sprintview/user-day-view', (req, res) => {
       });
     }
 
+    const startDate = projectStartDate ? new Date(projectStartDate) : null;
+
     const result = format === 'flat' 
-      ? expandToFlatGrid(scheduledTasks, totalProjectWeeks)
-      : expandToUserDayView(scheduledTasks, totalProjectWeeks);
+      ? expandToFlatGrid(scheduledTasks, totalProjectWeeks, startDate)
+      : expandToUserDayView(scheduledTasks, totalProjectWeeks, startDate);
 
     res.json(result);
   } catch (error) {

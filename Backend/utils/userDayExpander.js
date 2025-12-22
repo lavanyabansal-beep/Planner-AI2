@@ -15,26 +15,28 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
  * 
  * @param {Array} scheduledTasks - Output from scheduleSprintViewTasks
  * @param {number} totalProjectWeeks - Total project duration in weeks
+ * @param {Date} projectStartDate - Project start date for calendar date calculation
  * @returns {Object} Per-user day-level allocation data
  */
-function expandToUserDayView(scheduledTasks, totalProjectWeeks) {
+function expandToUserDayView(scheduledTasks, totalProjectWeeks, projectStartDate = null) {
   if (!scheduledTasks || scheduledTasks.length === 0) {
     return {
       users: [],
       totalWeeks: 0,
       totalDays: 0,
       weekGrid: [],
-      dayGrid: []
+      dayGrid: [],
+      projectStartDate: projectStartDate || new Date()
     };
   }
 
   const totalProjectDays = totalProjectWeeks * WORKING_DAYS_PER_WEEK;
   
-  // Build week grid structure
-  const weekGrid = buildWeekGrid(totalProjectWeeks);
+  // Build week grid structure with actual dates
+  const weekGrid = buildWeekGrid(totalProjectWeeks, projectStartDate);
   
   // Build day grid structure (absolute day numbers)
-  const dayGrid = buildDayGrid(totalProjectWeeks);
+  const dayGrid = buildDayGrid(totalProjectWeeks, projectStartDate);
   
   // Group tasks by user
   const userTaskMap = groupTasksByUser(scheduledTasks);
@@ -42,7 +44,7 @@ function expandToUserDayView(scheduledTasks, totalProjectWeeks) {
   // For each user, build day-level occupancy
   const users = Object.keys(userTaskMap).map(userName => {
     const userTasks = userTaskMap[userName];
-    const dayOccupancy = buildUserDayOccupancy(userTasks, totalProjectDays, totalProjectWeeks);
+    const dayOccupancy = buildUserDayOccupancy(userTasks, totalProjectDays, totalProjectWeeks, projectStartDate);
     
     return {
       userName,
@@ -61,6 +63,7 @@ function expandToUserDayView(scheduledTasks, totalProjectWeeks) {
     totalDays: totalProjectDays,
     weekGrid,
     dayGrid,
+    projectStartDate: projectStartDate || new Date(),
     metadata: {
       totalUsers: users.length,
       totalTasks: scheduledTasks.length,
@@ -70,36 +73,73 @@ function expandToUserDayView(scheduledTasks, totalProjectWeeks) {
 }
 
 /**
- * Build week grid structure
- * @returns {Array} Week metadata
+ * Calculate the calendar date for a working day number
+ * @param {Date} startDate - Project start date
+ * @param {number} workingDays - Number of working days to add (0-based)
+ * @returns {Date} Resulting date
  */
-function buildWeekGrid(totalWeeks) {
+function calculateWorkingDayDate(startDate, workingDays) {
+  const date = new Date(startDate);
+  let remaining = workingDays;
+  
+  while (remaining > 0) {
+    date.setDate(date.getDate() + 1);
+    const dayOfWeek = date.getDay();
+    // Skip weekends (0 = Sunday, 6 = Saturday)
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      remaining--;
+    }
+  }
+  
+  return date;
+}
+
+/**
+ * Build week grid structure
+ * @param {number} totalWeeks - Total number of weeks
+ * @param {Date} projectStartDate - Project start date
+ * @returns {Array} Week metadata with actual calendar dates
+ */
+function buildWeekGrid(totalWeeks, projectStartDate = null) {
+  const start = projectStartDate ? new Date(projectStartDate) : new Date();
+  
   return Array.from({ length: totalWeeks }, (_, i) => ({
     weekNumber: i + 1,
     startDay: i * WORKING_DAYS_PER_WEEK + 1,
     endDay: (i + 1) * WORKING_DAYS_PER_WEEK,
-    days: Array.from({ length: WORKING_DAYS_PER_WEEK }, (_, d) => ({
-      dayInWeek: d + 1,
-      dayName: DAY_NAMES[d],
-      absoluteDay: i * WORKING_DAYS_PER_WEEK + d + 1
-    }))
+    days: Array.from({ length: WORKING_DAYS_PER_WEEK }, (_, d) => {
+      const absoluteDay = i * WORKING_DAYS_PER_WEEK + d + 1;
+      const date = projectStartDate ? calculateWorkingDayDate(start, absoluteDay - 1) : null;
+      return {
+        dayInWeek: d + 1,
+        dayName: DAY_NAMES[d],
+        absoluteDay,
+        date: date ? date.toISOString() : null
+      };
+    })
   }));
 }
 
 /**
  * Build flat day grid (for header rendering)
- * @returns {Array} Day metadata
+ * @param {number} totalWeeks - Total number of weeks
+ * @param {Date} projectStartDate - Project start date
+ * @returns {Array} Day metadata with actual calendar dates
  */
-function buildDayGrid(totalWeeks) {
+function buildDayGrid(totalWeeks, projectStartDate = null) {
   const days = [];
+  const start = projectStartDate ? new Date(projectStartDate) : new Date();
+  
   for (let week = 1; week <= totalWeeks; week++) {
     for (let dayInWeek = 1; dayInWeek <= WORKING_DAYS_PER_WEEK; dayInWeek++) {
       const absoluteDay = (week - 1) * WORKING_DAYS_PER_WEEK + dayInWeek;
+      const date = projectStartDate ? calculateWorkingDayDate(start, absoluteDay - 1) : null;
       days.push({
         absoluteDay,
         week,
         dayInWeek,
-        dayName: DAY_NAMES[dayInWeek - 1]
+        dayName: DAY_NAMES[dayInWeek - 1],
+        date: date ? date.toISOString() : null
       });
     }
   }
@@ -126,19 +166,27 @@ function groupTasksByUser(tasks) {
  * @param {Array} userTasks - All tasks for this user
  * @param {number} totalDays - Total project days
  * @param {number} totalWeeks - Total project weeks
+ * @param {Date} projectStartDate - Project start date
  * @returns {Object} Week-day structure with occupancy
  */
-function buildUserDayOccupancy(userTasks, totalDays, totalWeeks) {
+function buildUserDayOccupancy(userTasks, totalDays, totalWeeks, projectStartDate = null) {
+  const start = projectStartDate ? new Date(projectStartDate) : new Date();
+  
   // Initialize week structure
   const weeks = Array.from({ length: totalWeeks }, (_, weekIdx) => ({
     weekNumber: weekIdx + 1,
-    days: Array.from({ length: WORKING_DAYS_PER_WEEK }, (_, dayIdx) => ({
-      dayInWeek: dayIdx + 1,
-      dayName: DAY_NAMES[dayIdx],
-      absoluteDay: weekIdx * WORKING_DAYS_PER_WEEK + dayIdx + 1,
-      tasks: [],
-      isEmpty: true
-    }))
+    days: Array.from({ length: WORKING_DAYS_PER_WEEK }, (_, dayIdx) => {
+      const absoluteDay = weekIdx * WORKING_DAYS_PER_WEEK + dayIdx + 1;
+      const date = projectStartDate ? calculateWorkingDayDate(start, absoluteDay - 1) : null;
+      return {
+        dayInWeek: dayIdx + 1,
+        dayName: DAY_NAMES[dayIdx],
+        absoluteDay,
+        date: date ? date.toISOString() : null,
+        tasks: [],
+        isEmpty: true
+      };
+    })
   }));
 
   // Map tasks to days
@@ -247,8 +295,8 @@ function getDayColorClass(day) {
  * Export as flat array for simpler rendering
  * Alternative format for grid-based UIs
  */
-function expandToFlatGrid(scheduledTasks, totalProjectWeeks) {
-  const expanded = expandToUserDayView(scheduledTasks, totalProjectWeeks);
+function expandToFlatGrid(scheduledTasks, totalProjectWeeks, projectStartDate = null) {
+  const expanded = expandToUserDayView(scheduledTasks, totalProjectWeeks, projectStartDate);
   
   const flatRows = expanded.users.map(user => {
     const allDays = user.weeks.flatMap(week => week.days);
