@@ -213,16 +213,16 @@ export function downloadCSV(csv, filename = 'sprintview-chart.csv') {
  */
 export function isTaskOverdue(task, currentDate = new Date()) {
   if (!task.dueDate) {
-    console.log('Task has no dueDate:', task.taskName || task.title);
     return false;
   }
   
   if (task.completed) {
-    console.log('Task is completed:', task.taskName || task.title);
     return false;
   }
   
   const dueDateObj = typeof task.dueDate === 'string' ? new Date(task.dueDate) : new Date(task.dueDate);
+  if (Number.isNaN(dueDateObj.getTime())) return false;
+
   const currentDateObj = typeof currentDate === 'string' ? new Date(currentDate) : new Date(currentDate);
   
   // Reset time to start of day for comparison
@@ -230,13 +230,6 @@ export function isTaskOverdue(task, currentDate = new Date()) {
   currentDateObj.setHours(0, 0, 0, 0);
   
   const isOverdue = currentDateObj > dueDateObj;
-  
-  console.log(`Overdue check for "${task.taskName || task.title}":`, {
-    dueDate: dueDateObj.toISOString(),
-    currentDate: currentDateObj.toISOString(),
-    isOverdue,
-    completed: task.completed
-  });
   
   return isOverdue;
 }
@@ -332,7 +325,8 @@ export function addWorkingDays(startDate, days) {
  */
 export function dateToProjectDay(date, projectStartDate) {
   const workingDays = getWorkingDaysDiff(projectStartDate, date);
-  return Math.max(1, workingDays + 1); // 1-based, minimum day 1
+  // getWorkingDaysDiff is inclusive, so it already yields a 1-based day.
+  return Math.max(1, workingDays); // 1-based, minimum day 1
 }
 
 /**
@@ -365,19 +359,27 @@ export function isWorkingDay(date) {
  */
 export function getProjectStartDate(tasks) {
   if (!tasks || tasks.length === 0) {
-    return normalizeDate(new Date()); // Default to today
+    // Use start of current month to prevent daily shifts
+    const today = new Date();
+    return normalizeDate(new Date(today.getFullYear(), today.getMonth(), 1));
   }
   
-  // Find earliest startDate
-  const datesWithStartDate = tasks
-    .filter(t => t.startDate)
-    .map(t => normalizeDate(t.startDate));
+  const relevantDates = [];
   
-  if (datesWithStartDate.length === 0) {
-    return normalizeDate(new Date()); // Default to today
+  // Collect all relevant dates from tasks
+  tasks.forEach(t => {
+    if (t.startDate) relevantDates.push(normalizeDate(t.startDate));
+    if (t.calculatedStartDate) relevantDates.push(normalizeDate(t.calculatedStartDate));
+    if (t.dueDate) relevantDates.push(normalizeDate(t.dueDate));
+  });
+  
+  if (relevantDates.length === 0) {
+    // Use start of current month instead of today
+    const today = new Date();
+    return normalizeDate(new Date(today.getFullYear(), today.getMonth(), 1));
   }
   
-  return new Date(Math.min(...datesWithStartDate));
+  return new Date(Math.min(...relevantDates));
 }
 
 /**
