@@ -10,6 +10,8 @@ import Spinner from '../components/common/Spinner';
 import Input from '../components/common/Input';
 import Modal from '../components/common/Modal';
 import useBoard from '../hooks/useBoard';
+import Chatbot from '../components/chatbot';
+
 
 const Home = () => {
   const [boards, setBoards] = useState([]);
@@ -498,7 +500,10 @@ const Home = () => {
           </div>
         </div>
       </Modal>
+      <Chatbot />
+
     </div>
+    
   );
 };
 
