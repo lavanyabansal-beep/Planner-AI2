@@ -199,7 +199,7 @@ app.post('/api/tasks', async (req, res) => {
 app.put('/api/tasks/:id', async (req, res) => {
   try {
     const updates = req.body.task || req.body
-    const t = await Task.findByIdAndUpdate(req.params.id, updates, { new: true })
+    const t = await Task.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true })
     if (!t) return res.sendStatus(404)
     res.json(t)
   } catch (err) { res.status(400).json({ error: err.message }) }

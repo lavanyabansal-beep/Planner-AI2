@@ -33,7 +33,20 @@ const TaskSchema = new mongoose.Schema({
   
   // Activity type for task management (SprintView chart)
   activityType: { type: String, default: 'ONE_TIME' },
-  estimatedDays: { type: Number, default: 0 },
+  estimatedDays: {
+    type: Number,
+    default: 0,
+    min: 0,
+    validate: {
+      validator: (v) => {
+        if (v === null || v === undefined) return true;
+        if (!Number.isFinite(v)) return false;
+        // allow whole days and half-days only
+        return Math.abs(v * 2 - Math.round(v * 2)) < 1e-9;
+      },
+      message: 'estimatedDays must be in 0.5-day increments'
+    }
+  },
   
   // Final Project Report fields
   actualStartDate: { type: Date },

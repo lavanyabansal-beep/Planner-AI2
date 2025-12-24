@@ -6,7 +6,7 @@ import AddTaskButton from './AddTaskButton';
 import Button from '../common/Button';
 import Input from '../common/Input';
 
-const Bucket = ({ bucket, tasks, users = [], onAddTask, onDeleteBucket, onUpdateBucket, onTaskClick, onUpdateTask }) => {
+const Bucket = ({ bucket, tasks, users = [], onAddTask, onDeleteBucket, onUpdateBucket, onTaskClick, onUpdateTask, onBucketClick }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(bucket.title);
   const [showMenu, setShowMenu] = useState(false);
@@ -128,7 +128,11 @@ const Bucket = ({ bucket, tasks, users = [], onAddTask, onDeleteBucket, onUpdate
               </button>
               <h3
                 className="flex-1 font-semibold text-white truncate cursor-pointer hover:text-primary-400 transition-colors"
-                onClick={() => setIsEditing(true)}
+                onClick={() => onBucketClick?.(bucket)}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditing(true);
+                }}
                 title={bucket.title}
               >
                 {bucket.title}

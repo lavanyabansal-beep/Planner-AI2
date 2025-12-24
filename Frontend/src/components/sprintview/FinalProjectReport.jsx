@@ -17,7 +17,7 @@ const FinalProjectReport = ({
 
   if (!scheduledTasks || scheduledTasks.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
+      <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg border border-gray-700 p-8 text-center">
         <div className="text-gray-400 text-lg">No tasks to display</div>
       </div>
     );
@@ -73,37 +73,37 @@ const FinalProjectReport = ({
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
       {/* Header with filters */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Project Timeline</h3>
+        <h3 className="text-lg font-semibold text-white">Project Timeline</h3>
         <div className="flex gap-2">
           <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded text-sm font-medium ${
+            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
               filter === 'all'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'bg-primary-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
           >
             All ({scheduledTasks.length})
           </button>
           <button
             onClick={() => setFilter('completed')}
-            className={`px-3 py-1 rounded text-sm font-medium ${
+            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
               filter === 'completed'
-                ? 'bg-green-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
           >
             Completed ({stats.completedCount || 0})
           </button>
           <button
             onClick={() => setFilter('active')}
-            className={`px-3 py-1 rounded text-sm font-medium ${
+            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
               filter === 'active'
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                ? 'bg-orange-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
           >
             Active ({stats.activeCount || 0})
@@ -121,7 +121,7 @@ const FinalProjectReport = ({
               {Array.from({ length: maxWeek }, (_, i) => (
                 <div
                   key={i}
-                  className="text-xs font-semibold text-gray-600 text-center"
+                  className="text-xs font-semibold text-gray-400 text-center"
                   style={{ width: `${weekWidth}px` }}
                 >
                   Week {i + 1}
@@ -136,8 +136,8 @@ const FinalProjectReport = ({
               <div className="flex items-start">
                 {/* Owner name */}
                 <div className="w-48 flex-shrink-0 pr-4">
-                  <div className="font-semibold text-gray-900">{owner}</div>
-                  <div className="text-xs text-gray-500">
+                  <div className="font-semibold text-white">{owner}</div>
+                  <div className="text-xs text-gray-400">
                     {tasksByOwner[owner].length} task{tasksByOwner[owner].length !== 1 ? 's' : ''}
                   </div>
                 </div>
@@ -149,7 +149,7 @@ const FinalProjectReport = ({
                     {Array.from({ length: maxWeek }, (_, i) => (
                       <div
                         key={i}
-                        className="border-r border-gray-200"
+                        className="border-r border-gray-700"
                         style={{ width: `${weekWidth}px` }}
                       ></div>
                     ))}
@@ -178,14 +178,14 @@ const FinalProjectReport = ({
                           {task.status === 'completed' && (
                             <span className="text-white text-sm">✓</span>
                           )}
-                          <span className="text-xs font-medium truncate text-gray-900">
+                          <span className="text-xs font-medium truncate text-white">
                             {task.taskName}
                           </span>
                         </div>
 
                         {/* Tooltip */}
                         {hoveredTask?.taskId === task.taskId && hoveredTask?.taskOwner === task.taskOwner && (
-                          <div className="absolute z-10 bg-gray-900 text-white text-xs rounded p-2 shadow-lg whitespace-nowrap"
+                          <div className="absolute z-10 bg-gray-900 text-white text-xs rounded p-3 shadow-xl whitespace-nowrap border border-gray-700"
                                style={{ top: '100%', left: '0', marginTop: '4px' }}>
                             <div><strong>{task.taskName}</strong></div>
                             {task.allOwners && task.allOwners.length > 1 ? (
@@ -211,9 +211,9 @@ const FinalProjectReport = ({
 
       {/* Legend */}
       {showLegend && (
-        <div className="mt-6 pt-4 border-t border-gray-200">
-          <div className="text-sm font-medium text-gray-700 mb-2">Legend</div>
-          <div className="flex flex-wrap gap-4 text-xs">
+        <div className="mt-6 pt-4 border-t border-gray-700">
+          <div className="text-sm font-medium text-gray-300 mb-2">Legend</div>
+          <div className="flex flex-wrap gap-4 text-xs text-gray-300">
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 bg-green-500 opacity-70 border-2 border-green-600 rounded"></div>
               <span>Completed (Frozen)</span>
@@ -223,7 +223,7 @@ const FinalProjectReport = ({
               <span>In Progress</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-gray-300 border-2 border-gray-400 border-dashed rounded"></div>
+              <div className="w-4 h-4 bg-gray-500 border-2 border-gray-600 border-dashed rounded"></div>
               <span>Not Started</span>
             </div>
           </div>
