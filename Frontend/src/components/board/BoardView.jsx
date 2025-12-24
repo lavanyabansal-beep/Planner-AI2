@@ -16,6 +16,7 @@ const BoardView = ({
   onUpdateTask,
   onMoveTask,
   onTaskClick,
+  onBucketClick,
   getTasksByBucket
 }) => {
   const [activeId, setActiveId] = useState(null);
@@ -77,6 +78,7 @@ const BoardView = ({
                 onUpdateBucket={onUpdateBucket}
                 onUpdateTask={onUpdateTask}
                 onTaskClick={onTaskClick}
+                onBucketClick={onBucketClick}
               />
             ))}
           </SortableContext>

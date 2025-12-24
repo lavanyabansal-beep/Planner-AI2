@@ -228,6 +228,7 @@ const SprintViewModal = ({ boardId, boardName, isOpen, onClose, selectedMemberId
                   scheduledTasks={sprintviewData.scheduledTasks}
                   totalProjectWeeks={sprintviewData.totalProjectWeeks}
                   ownerTimelines={sprintviewData.ownerTimelines}
+                  projectStartDate={sprintviewData.projectStartDate}
                   showLegend={true}
                   compact={false}
                 />

@@ -89,6 +89,10 @@ const TaskCard = ({ task, users = [], onClick, onToggleComplete }) => {
   const completedChecklist = task.checklist?.filter(item => item.done).length || 0;
   const totalChecklist = task.checklist?.length || 0;
   const activityConfig = getActivityConfig(task.activityType);
+  const memberNames = populatedAssignedTo
+    .map(u => (u?.name || 'Unknown'))
+    .filter(Boolean)
+    .join(', ');
 
   const handleCheckboxClick = (e) => {
     e.stopPropagation();
@@ -140,7 +144,7 @@ const TaskCard = ({ task, users = [], onClick, onToggleComplete }) => {
             checked={task.completed || false}
             onChange={handleCheckboxClick}
             onClick={(e) => e.stopPropagation()}
-            className="mt-0.5 w-5 h-5 text-primary-600 bg-gray-900 border-gray-600 rounded focus:ring-primary-500 focus:ring-offset-gray-700 cursor-pointer flex-shrink-0"
+            className="mt-0.5 w-5 h-5 appearance-none rounded-full bg-gray-900 border border-gray-600 cursor-pointer flex-shrink-0 inline-grid place-content-center focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-gray-700 checked:bg-primary-600 checked:border-primary-600 checked:after:content-[''] checked:after:block checked:after:w-2 checked:after:h-2 checked:after:rounded-full checked:after:bg-white"
             aria-label={`Mark "${task.title}" as ${task.completed ? 'incomplete' : 'complete'}`}
           />
           <h4 className={`flex-1 font-medium text-white leading-snug ${task.completed ? 'line-through text-gray-400' : ''}`}>
@@ -193,7 +197,14 @@ const TaskCard = ({ task, users = [], onClick, onToggleComplete }) => {
         {/* Assigned Users */}
         {populatedAssignedTo.length > 0 && (
           <div className="pt-1 border-t border-gray-600/50">
-            <AvatarGroup users={populatedAssignedTo} size="sm" max={4} />
+            <div className="relative" title={memberNames}>
+              <AvatarGroup users={populatedAssignedTo} size="sm" max={4} />
+              <div className="pointer-events-none absolute -top-7 left-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="inline-block rounded-md border border-gray-700 bg-gray-900/90 px-2 py-1 text-xs text-gray-200 whitespace-normal max-w-xs">
+                  {memberNames}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

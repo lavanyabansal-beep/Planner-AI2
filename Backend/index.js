@@ -199,7 +199,7 @@ app.post('/api/tasks', async (req, res) => {
 app.put('/api/tasks/:id', async (req, res) => {
   try {
     const updates = req.body.task || req.body
-    const t = await Task.findByIdAndUpdate(req.params.id, updates, { new: true })
+    const t = await Task.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true })
     if (!t) return res.sendStatus(404)
     res.json(t)
   } catch (err) { res.status(400).json({ error: err.message }) }
@@ -344,15 +344,18 @@ app.post('/api/sprintview/schedule-from-board/:boardId', async (req, res) => {
       owners.forEach(owner => {
         sprintviewTasks.push({
           taskName: task.title,
-          tentativeEtaDays: task.estimatedDays || 1,
+          tentativeEtaDays: task.estimatedDays ?? 1,
           activityType: task.activityType || 'ONE_TIME',
           taskOwner: owner,
           taskId: task._id.toString(),
           priority: task.priority,
           startDate: task.startDate,
           dueDate: task.dueDate,
-          completed: task.completed || false,
-          completedDate: task.progress === 'completed' ? task.updatedAt : null,
+          completed: Boolean(task.completed) || Number(task.progress) >= 100,
+          completedDate:
+            (Boolean(task.completed) || Number(task.progress) >= 100)
+              ? (task.completedDate || task.updatedAt)
+              : null,
           isMultiUser: owners.length > 1,
           allOwners: owners
         });
