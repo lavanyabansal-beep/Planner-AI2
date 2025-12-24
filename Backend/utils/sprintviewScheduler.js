@@ -17,18 +17,26 @@ const WORKING_DAYS_PER_WEEK = 5;
  * @returns {Date} Project start date
  */
 function getProjectStartDate(tasks) {
-  const datesWithStartDate = tasks
-    .filter(t => t.startDate)
-    .map(t => new Date(t.startDate));
+  const relevantDates = [];
   
-  if (datesWithStartDate.length > 0) {
-    return new Date(Math.min(...datesWithStartDate));
+  // Collect all relevant dates from tasks (start dates and due dates)
+  tasks.forEach(t => {
+    if (t.startDate) relevantDates.push(new Date(t.startDate));
+    if (t.dueDate) relevantDates.push(new Date(t.dueDate));
+  });
+  
+  if (relevantDates.length > 0) {
+    // Use the earliest date, ensuring it's normalized
+    const earliestDate = new Date(Math.min(...relevantDates));
+    earliestDate.setHours(0, 0, 0, 0);
+    return earliestDate;
   }
   
-  // Default to today if no start dates
+  // If no dates at all, use start of current month to prevent daily shifts
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  return startOfMonth;
 }
 
 /**
@@ -124,7 +132,7 @@ function calculateDuration(task) {
     case ACTIVITY_TYPES.CONTINUOUS:
     case ACTIVITY_TYPES.PARALLEL_ALLOWED:
     default:
-      return tentativeEtaDays || 1;
+      return tentativeEtaDays ?? 1;
   }
 }
 
@@ -208,10 +216,13 @@ function scheduleSprintViewTasks(tasks) {
     let endDay;
     let actualEndDate;
     
-    // For fractional days (0.5), ensure at least 1 day duration for rendering
-    const effectiveDuration = Math.max(1, Math.ceil(durationDays));
+    const isZeroDuration = durationDays === 0;
+
+    // For fractional days (0.5), ensure at least 1 day duration for rendering.
+    // For 0-day tasks, preserve true zero duration.
+    const effectiveDuration = isZeroDuration ? 0 : Math.max(1, Math.ceil(durationDays));
     
-    if (activityType === ACTIVITY_TYPES.MILESTONE) {
+    if (activityType === ACTIVITY_TYPES.MILESTONE || isZeroDuration) {
       // Milestone: No duration
       endDay = startDay;
       actualEndDate = actualStartDate;
@@ -231,7 +242,7 @@ function scheduleSprintViewTasks(tasks) {
     }
 
     // Update owner availability (only if not parallel and no explicit start date)
-    if (!startDate && !canOverlap(activityType) && activityType !== ACTIVITY_TYPES.RECURRING_WEEKLY) {
+    if (!startDate && !canOverlap(activityType) && activityType !== ACTIVITY_TYPES.RECURRING_WEEKLY && !isZeroDuration) {
       ownerAvailability[taskOwner] = endDay + 1;
     } else if (!startDate && activityType === ACTIVITY_TYPES.RECURRING_WEEKLY) {
       // Recurring weekly: Increment by 1 day (doesn't block full duration)

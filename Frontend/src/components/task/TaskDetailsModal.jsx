@@ -8,6 +8,14 @@ import AvatarGroup from '../common/AvatarGroup';
 import { uploadsAPI } from '../../services/api';
 import { getProgressLabel, getProgressColor } from '../../utils/helpers';
 
+const normalizeHalfDay = (value) => {
+  if (value === '' || value === null || value === undefined) return '';
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return '';
+  const nonNegative = Math.max(0, numeric);
+  return Math.round(nonNegative * 2) / 2;
+};
+
 const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) => {
   const [formData, setFormData] = useState({
     title: '',
@@ -72,13 +80,14 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
 
   const handleSave = async () => {
     try {
+      const normalizedEstimatedDays = normalizeHalfDay(formData.estimatedDays);
       await onUpdate(task._id, {
         ...formData,
         assignedTo: formData.assignedTo.map(u => u._id),
         startDate: formData.startDate || undefined,
         dueDate: formData.dueDate || undefined,
         activityType: formData.activityType,
-        estimatedDays: parseFloat(formData.estimatedDays) || 0,
+        estimatedDays: normalizedEstimatedDays === '' ? 0 : normalizedEstimatedDays,
       });
       onClose();
     } catch (err) {
@@ -267,7 +276,14 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
                 min="0"
                 step="0.5"
                 value={formData.estimatedDays}
-                onChange={(e) => setFormData({ ...formData, estimatedDays: e.target.value })}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setFormData({ ...formData, estimatedDays: next });
+                }}
+                onBlur={() => {
+                  const normalized = normalizeHalfDay(formData.estimatedDays);
+                  setFormData({ ...formData, estimatedDays: normalized === '' ? '' : normalized });
+                }}
                 className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                 placeholder="0"
               />
@@ -344,7 +360,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
           </div>
         </div>
 
-        {/* Attachments */}
+        {/* Attachments
         <div>
           <label className="form-label">Attachments</label>
           <div className="space-y-3">
@@ -415,7 +431,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
               </div>
             </label>
           </div>
-        </div>
+        </div> */}
 
         {/* Actions */}
         <div className="flex flex-col sm:flex-row justify-between gap-3 pt-4 border-t border-gray-700">

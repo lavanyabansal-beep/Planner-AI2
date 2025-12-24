@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { boardsAPI } from '../services/api';
 import BoardView from '../components/board/BoardView';
 import TaskDetailsModal from '../components/task/TaskDetailsModal';
+import BucketDetailsModal from '../components/board/BucketDetailsModal';
 import AddMemberModal from '../components/members/AddMemberModal';
 import SprintViewModal from '../components/sprintview/SprintViewModal';
 import Button from '../components/common/Button';
@@ -18,6 +19,7 @@ const Home = () => {
   const [selectedBoardId, setSelectedBoardId] = useState(null);
   const [loadingBoards, setLoadingBoards] = useState(true);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [selectedBucket, setSelectedBucket] = useState(null);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showSprintView, setShowSprintView] = useState(false);
     const [showCreateBoard, setShowCreateBoard] = useState(false);
@@ -151,7 +153,7 @@ const Home = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-slate-900">
         <div className="text-center space-y-4">
           <Spinner size="lg" />
-          <p className="text-sm text-gray-300">Loading boards...</p>
+          <p className="text-sm text-gray-300">Loading projects...</p>
         </div>
       </div>
     );
@@ -350,7 +352,7 @@ const Home = () => {
           <div className="h-full flex items-center justify-center">
             <div className="text-center space-y-4">
               <Spinner size="lg" />
-              <p className="text-sm text-gray-300">Loading board...</p>
+              <p className="text-sm text-gray-300">Loading the project...</p>
             </div>
           </div>
         ) : error ? (
@@ -399,6 +401,7 @@ const Home = () => {
             onUpdateTask={updateTask}
             onMoveTask={moveTask}
             onTaskClick={handleTaskClick}
+            onBucketClick={(bucket) => setSelectedBucket(bucket)}
             getTasksByBucket={getFilteredTasksByBucket}
           />
         )}
@@ -412,6 +415,18 @@ const Home = () => {
         users={users}
         onUpdate={updateTask}
         onDelete={deleteTask}
+      />
+
+      <BucketDetailsModal
+        isOpen={!!selectedBucket}
+        onClose={() => setSelectedBucket(null)}
+        bucket={selectedBucket}
+        tasks={selectedBucket ? getTasksByBucket(selectedBucket._id) : []}
+        users={users}
+        onUpdate={updateBucket}
+        onDelete={deleteBucket}
+        onTaskClick={handleTaskClick}
+        onUpdateTask={updateTask}
       />
 
       <AddMemberModal

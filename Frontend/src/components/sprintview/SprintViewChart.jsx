@@ -43,14 +43,33 @@ const SprintViewChart = ({
     }
   }, [providedStartDate, scheduledTasks]);
 
+  // Extend timeline when overdue tasks should visually extend to "today".
+  // Without this, bars can disappear because the required endDay isn't present in `days`.
+  const effectiveTotalProjectWeeks = useMemo(() => {
+    if (!scheduledTasks || scheduledTasks.length === 0) return totalProjectWeeks;
+
+    const maxScheduledEndDay = scheduledTasks.reduce((max, t) => {
+      const endDay = Number(t?.endDay);
+      return Number.isFinite(endDay) ? Math.max(max, endDay) : max;
+    }, 0);
+
+    // Only extend to today if at least one task is overdue and not completed.
+    const hasOverdueActiveTask = scheduledTasks.some(t => isTaskOverdue(t, currentDate) && !t.completed);
+    const todayDay = hasOverdueActiveTask ? dateToProjectDay(currentDate, projectStartDate) : 0;
+    const maxRequiredDay = Math.max(maxScheduledEndDay, todayDay);
+
+    const minWeeksFromDays = maxRequiredDay > 0 ? Math.ceil(maxRequiredDay / 5) : 0;
+    return Math.max(totalProjectWeeks || 0, minWeeksFromDays);
+  }, [scheduledTasks, totalProjectWeeks, currentDate, projectStartDate]);
+
   // Generate week columns
   const weeks = useMemo(() => {
-    return Array.from({ length: totalProjectWeeks }, (_, i) => i + 1);
-  }, [totalProjectWeeks]);
+    return Array.from({ length: effectiveTotalProjectWeeks }, (_, i) => i + 1);
+  }, [effectiveTotalProjectWeeks]);
 
   // Generate day columns with ONLY working days (excluding weekends)
   const days = useMemo(() => {
-    if (!projectStartDate || totalProjectWeeks === 0) {
+    if (!projectStartDate || effectiveTotalProjectWeeks === 0) {
       return [];
     }
     
@@ -64,7 +83,7 @@ const SprintViewChart = ({
       let calendarDayIndex = 0;
       
       // Generate days until we have enough working days for all weeks
-      const totalWorkingDaysNeeded = totalProjectWeeks * 5;
+      const totalWorkingDaysNeeded = effectiveTotalProjectWeeks * 5;
       
       while (workingDayCount < totalWorkingDaysNeeded) {
         const dayOfWeek = currentCalendarDate.getDay();
@@ -98,7 +117,7 @@ const SprintViewChart = ({
       console.error('Error generating days:', error);
       return [];
     }
-  }, [totalProjectWeeks, projectStartDate, currentDate]);
+  }, [effectiveTotalProjectWeeks, projectStartDate, currentDate]);
 
   // Transform data: Group tasks by taskId with accurate date calculations
   const transformedTasks = useMemo(() => {
@@ -106,10 +125,15 @@ const SprintViewChart = ({
     
     console.log('=== SprintView Transform Start ===');
     console.log('Total scheduledTasks:', scheduledTasks.length);
+    console.log('Total Project Weeks:', totalProjectWeeks);
     console.log('Project Start Date:', projectStartDate.toISOString());
 
     scheduledTasks.forEach(scheduledTask => {
       const taskId = scheduledTask.taskId || scheduledTask.taskName;
+      
+      console.log(`\nProcessing: "${scheduledTask.taskName}" (${scheduledTask.taskOwner})`);
+      console.log(`  Days: ${scheduledTask.startDay}-${scheduledTask.endDay}, Weeks: ${scheduledTask.startWeek}-${scheduledTask.endWeek}`);
+      console.log(`  Completed: ${scheduledTask.completed}, Activity: ${scheduledTask.activityType}`);
       
       // Calculate overdue status (needed for both new tasks and member calculations)
       const overdueStatus = isTaskOverdue(scheduledTask, currentDate);
@@ -255,13 +279,20 @@ const SprintViewChart = ({
   const calculateMemberBarStyle = (member, task) => {
     const { startDay, endDay } = member;
     
-    if (days.length === 0) return { display: 'none' };
+    if (days.length === 0) {
+      console.warn('⚠️ Days array is empty');
+      return { display: 'none' };
+    }
     
     // Since days array now only contains working days, directly find by absoluteDay
     const startCalendarDay = days.find(d => d.absoluteDay === startDay);
     const endCalendarDay = days.find(d => d.absoluteDay === endDay);
     
     if (!startCalendarDay || !endCalendarDay) {
+      console.warn(`⚠️ Day not found for ${member.memberName} in task "${task.taskName}"`);
+      console.warn(`   Looking for startDay=${startDay}, endDay=${endDay}`);
+      console.warn(`   Days array range: ${days[0]?.absoluteDay} to ${days[days.length - 1]?.absoluteDay} (${days.length} days)`);
+      console.warn(`   Task completed: ${task.completed}, Task activity: ${task.activityType}`);
       return { display: 'none' };
     }
     
@@ -270,10 +301,19 @@ const SprintViewChart = ({
     
     const startPercent = (startIndex / days.length) * 100;
     
-    // Calculate proportional width based on actual duration
-    const actualDuration = member.durationDays || 1;
+    // Calculate width based on the number of days between start and end
+    const actualDurationDays = endDay - startDay + 1;
     const dayWidth = (1 / days.length) * 100; // Width of one day
-    const widthPercent = actualDuration * dayWidth;
+
+    // If this assignment is a fractional-day task that fits within a single day,
+    // render it as a fractional width instead of a full day.
+    const isSingleDay = startDay === endDay;
+    const memberDuration = Number(member.durationDays);
+    const fractionalWidthDays = isSingleDay && Number.isFinite(memberDuration) && memberDuration > 0 && memberDuration < 1
+      ? memberDuration
+      : actualDurationDays;
+
+    const widthPercent = fractionalWidthDays * dayWidth;
 
     return {
       left: `${startPercent}%`,
@@ -309,16 +349,25 @@ const SprintViewChart = ({
         const originalEndIndex = days.findIndex(d => d.absoluteDay === originalEndDay);
         const todayIndex = days.findIndex(d => d.absoluteDay === todayDay);
         
-        const actualDuration = member.durationDays || 1;
+        // Calculate width based on actual days between start and original end
+        const actualDurationDays = originalEndDay - startDay + 1;
         const dayWidth = (1 / days.length) * 100;
+
+        // If the scheduled portion is a single-day fractional task (e.g. 0.5d),
+        // use the fractional duration for the "normal" portion width.
+        const memberDuration = Number(member.durationDays);
+        const isSingleDayScheduled = startDay === originalEndDay;
+        const scheduledWidthDays = isSingleDayScheduled && Number.isFinite(memberDuration) && memberDuration > 0 && memberDuration < 1
+          ? memberDuration
+          : actualDurationDays;
         
         const normalStartPercent = (startIndex / days.length) * 100;
-        const normalWidthPercent = (actualDuration * dayWidth);
+        const normalWidthPercent = (scheduledWidthDays * dayWidth);
         
         const normalEndPercent = normalStartPercent + normalWidthPercent;
-        const todayEndPercent = (todayIndex / days.length) * 100;
+        const todayPercent = (todayIndex / days.length) * 100;
         const overdueStartPercent = normalEndPercent;
-        const overdueWidthPercent = todayEndPercent - normalEndPercent;
+        const overdueWidthPercent = todayPercent - normalEndPercent;
         
         return (
           <React.Fragment key={`member-${memberIndex}`}>
