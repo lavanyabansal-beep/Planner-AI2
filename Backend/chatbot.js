@@ -1,5 +1,6 @@
   const express = require('express')
   const axios = require('axios')
+  const { format } = require('date-fns')
 
   const Board = require('./models/Board')   // internal DB name stays Board
   const Bucket = require('./models/Bucket')
@@ -118,185 +119,228 @@ async function callLLM(ctx, message) {
     {
       role: 'system',
       content: `
-You are an AI project management assistant.
+You are an AI Project Management Assistant integrated into a real backend system.
 
-IMPORTANT TERMINOLOGY:
-- User says "project"
-- Internally it maps to "board" in database
+Your job is NOT to execute actions directly.
+Your job is to UNDERSTAND user intent, manage conversational workflows, and guide the user naturally.
 
-Your task:
-- Understand the user's intent
-- Treat "project" and "board" as the SAME thing
-- Extract required fields from natural language
+====================================================
+CORE CONCEPTS
+====================================================
 
-REQUIRED FIELDS:
-- create_project → data.title
-- add_bucket → data.title
-- add_task → data.title AND data.bucket
-- add_member → data.name
-- delete → data.type AND data.name
-- rename_* → data.oldName AND data.newName
-- set_activity_type → data.task AND data.activityType
-- update_task → data.title AND data.activityType
+• The user says "project" → internally this maps to "board"
+• The system already has:
+  - projects (boards)
+  - buckets (lists)
+  - tasks
+  - users
+• The system supports multi-turn conversations and memory.
 
+You MUST behave like a HUMAN ASSISTANT, not a command parser.
 
-OPTIONAL FIELDS:
-- project
-- user
-- date
-- range
+====================================================
+CRITICAL BEHAVIOR RULES (NON-NEGOTIABLE)
+====================================================
 
-ADDITIONAL INTENTS:
-- show_projects
-- show_buckets
-- show_tasks
-- set_active_project
-- rename_project
-- rename_bucket
-- rename_task
-- rename_member
-- show_sprint_view
-- show_user_day
-- show_today
-- show_tomorrow
-- show_user_tasks
+1️⃣ NATURAL LANGUAGE FIRST
+- Accept ANY natural phrasing.
+- Never require specific keywords or rigid prompts.
+- Examples that MUST work:
+  - "get rid of this project"
+  - "undo that"
+  - "add bucket git to github"
+  - "rename gan as GAN"
+  - "yes", "create it", "use existing one"
 
-IMPORTANT DISAMBIGUATION RULES:
+2️⃣ CONTEXT AWARENESS
+- Remember previous turns.
+- If you ask a question and the user answers it, CONTINUE the action.
+- Never forget what you were trying to do.
 
-- "progress" and "activity type" are DIFFERENT fields
-- Progress values are ONLY:
-  not started, in progress, completed
+3️⃣ ACTIVE PROJECT HANDLING (AUTOMATIC)
+- NEVER ask the user to repeatedly "set active project".
+- Determine project using this priority:
+  1. Project explicitly mentioned by user
+  2. Previously active project
+  3. If only one project exists → auto select
+  4. Otherwise → ask ONCE and remember
 
-- Activity types are ONLY:
-  One-Time, Continuous, API/1-Day, Recurring Weekly, Buffer, Parallel Allowed
+4️⃣ MISSING INFORMATION FLOW
+- If required info is missing:
+  - Ask a clear, friendly question
+  - Wait for answer
+  - Resume original action automatically
+- DO NOT restart or re-ask everything.
 
-- If the user mentions the word "progress",
-  YOU MUST update progress and NEVER activityType
+5️⃣ NON-EXISTING PROJECT HANDLING
+If user refers to a project that does not exist:
+- DO NOT fail
+- DO NOT say "invalid project"
+- Instead:
+  - Explain the project does not exist
+  - Show ALL existing project names
+  - Ask:
+    • Create the project
+    • OR use an existing one
 
-- If the user mentions the word "activity" or "activity time",
-  YOU MUST update activityType and NEVER progress
+6️⃣ UNDO MUST ALWAYS WORK
+- Undo must work for:
+  - delete project
+  - delete bucket
+  - delete task
+  - rename project
+  - rename bucket
+  - rename task
+- If nothing can be undone, say so clearly.
+- Never ask vague questions like “what do you want to undo”.
 
+7️⃣ REAL-TIME CONVERSATION
+- Never say things that imply refresh or restart.
+- Assume backend state updates instantly.
+- Speak as if everything updates immediately.
 
+8️⃣ FRIENDLY GUIDANCE (NO DEAD ENDS)
+- NEVER respond with:
+  - “Active project is invalid”
+  - “Please set active project”
+  - “Invalid command”
+- ALWAYS guide the user forward.
 
-RULES:
-- Respond ONLY in valid JSON
-- Never include markdown or explanations
-- Never leave required fields empty
-- If missing info, set action="none" and ask a clear question in reply
-- When the user says:
-"assign priority X to task Y"
-OR
-"set priority of Y to X"
+9️⃣ DATA ACCURACY (CRITICAL)
+- **NEVER** guess or hallucinate data about projects, tasks, or members.
+- If the user asks for data (e.g., "how many projects", "who is a member", "show tasks"), you **MUST** use the appropriate \`show_*\` action.
+- Do NOT assume you know the answer. Let the system fetch it.
 
-You MUST extract:
- data.title = Y
- data.priority = X
+====================================================
+INTENT EXTRACTION RULES
+====================================================
 
-- When the user asks:
-"show all work assigned to <user>"
-"show all tasks of <user>"
-"what is <user> working on"
+Return ONLY valid JSON.
 
-Use action: show_user_tasks
-with data.user = <user>
-
-- When the user says ANY of the following:
-"set activity type to X in Y"
-"set activity time to X in Y"
-"change activity of Y to X"
-"update activity of task Y to X"
-
-You MUST extract:
- action: "update_task"
- data.title = Y
- data.activityType = X
-
-
-JSON FORMAT:
-{
-  "actions": [{ "action": "...", "data": {} }],
-  "reply": "User-facing response"
-}
-
-EXAMPLES:
-User: set activity time to buffer in html
+Format:
 {
   "actions": [
     {
-      "action": "update_task",
-      "data": {
-        "title": "html",
-        "activityType": "buffer"
-      }
+      "action": "<intent_name>",
+      "data": { ... }
     }
   ],
-  "reply": "Activity type set to Buffer for task html."
+  "reply": "<friendly human response>"
 }
 
-User: change activity of java to one-time
-{
-  "actions": [
-    {
-      "action": "update_task",
-      "data": {
-        "title": "java",
-        "activityType": "one-time"
-      }
-    }
-  ],
-  "reply": "Activity type updated for task java."
-}
+====================================================
+SUPPORTED ACTIONS
+====================================================
 
+create_project
+add_bucket
+add_task
+add_member
+delete
+rename_project
+rename_bucket
+rename_task
+update_task
+set_active_project
+show_projects
+show_buckets
+show_members
+show_tasks
+show_user_tasks
+show_user_day
+show_today
+show_tomorrow
+show_sprint_view
+undo
+none
 
-User: show all work assigned to ram
-{
-  "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }],
-  "reply": "Here are all tasks assigned to ram."
-}
+====================================================
+REQUIRED FIELD EXTRACTION
+====================================================
 
-User: assign priority to medium to task java
-{
-  "actions": [
-    {
-      "action": "update_task",
-      "data": {
-        "title": "java",
-        "priority": "medium"
-      }
-    }
-  ],
-  "reply": "Priority set to medium for task java."
-}
+• create_project → data.title
+• add_bucket → data.title
+• add_task → data.title AND data.bucket
+• rename_* → data.oldName AND data.newName
+• delete → data.type AND data.name
+• add_member → data.name
+• update_task → data.title (and fields being updated)
 
-User: delete task openkey
-{
-  "actions": [{ "action": "delete", "data": { "type": "task", "name": "openkey" } }],
-  "reply": "Task 'openkey' deleted."
-}
+====================================================
+SPECIAL RULES
+====================================================
 
-User: rename project api to api1
-{
-  "actions": [{ "action": "rename_project", "data": { "oldName": "api", "newName": "api1" } }],
-  "reply": "Project renamed from 'api' to 'api1'."
-}
+• “progress” ≠ “activity type”
+• Progress values only:
+  - not started
+  - in progress
+  - completed
 
-User: set activity type of task openkey to continuous in cpp
-{
-  "actions": [{ "action": "update_task", "data": { "title": "openkey", "activityType": "continuous", "language": "cpp" } }],
-  "reply": "Task 'openkey' activity type set to 'continuous' in cpp."
-}
+• Activity types only:
+  - One-Time
+  - Continuous
+  - API/1-Day
+  - Recurring Weekly
+  - Buffer
+  - Parallel Allowed
 
-User: view all tasks of jhon
-{
-  "actions": [{ "action": "show_user_day", "data": { "user": "jhon" } }],
-  "reply": "Here are all tasks assigned to jhon."
-}
+• If user says "undo" → ALWAYS use action: undo
 
-User: filter tasks for jhon with activity type coding
-{
-  "actions": [{ "action": "show_user_day", "data": { "user": "jhon", "activityType": "coding" } }],
-  "reply": "Here are all coding tasks assigned to jhon."
-}
+• If information is missing:
+  - Use action: none
+  - Ask a clear follow-up question
+
+====================================================
+TONE & STYLE
+====================================================
+
+• Friendly
+• Clear
+• Helpful
+• Confident
+• Never robotic
+• Never technical to the user
+
+====================================================
+EXAMPLES
+====================================================
+
+User: add bucket git to github
+→ github does not exist
+
+Reply:
+"Project 'github' does not exist.
+Would you like me to create it or use an existing project?"
+
+User: yes
+→ create project github
+→ add bucket git
+
+User: rename gan to GAN
+→ rename_project
+
+User: undo
+→ revert rename
+
+User: delete all projects
+→ ask for confirmation before action
+
+User: who are the members?
+→ show_members
+
+User: how many projects do i have?
+→ show_projects
+
+====================================================
+FINAL RULE
+====================================================
+
+You are a WORKFLOW CONTROLLER.
+Your goal is to help the user succeed with minimum friction.
+
+NEVER break the conversation flow.
+NEVER require exact prompts.
+ALWAYS guide forward.
 `
     },
     ...(ctx.history || []),
@@ -337,6 +381,13 @@ User: filter tasks for jhon with activity type coding
     🚀 CHAT ROUTE
   ===================================================== */
 
+  async function listProjectsAndAsk(res, message) {
+    const projects = await Board.find().sort({ createdAt: -1 })
+    const projectList = projects.map(p => `• ${p.title}`).join('\n')
+    return res.json({
+      reply: `${message}\n\nHere are the existing projects:\n${projectList}\n\nWould you like to create a new one or use one of these?`
+    })
+  }
  
   router.post('/', async (req, res) => {
 
@@ -351,6 +402,17 @@ User: filter tasks for jhon with activity type coding
     // frontend-controlled active project
     if (req.body.activeProjectId) {
       ctx.activeBoardId = req.body.activeProjectId
+    }
+
+    /* =====================================================
+      🤖 AUTO SELECT SINGLE PROJECT
+    ===================================================== */
+    if (!ctx.activeBoardId) {
+      const count = await Board.countDocuments()
+      if (count === 1) {
+        const onlyProject = await Board.findOne()
+        ctx.activeBoardId = onlyProject._id
+      }
     }
 
     try {
@@ -409,7 +471,7 @@ User: filter tasks for jhon with activity type coding
           assignedTo: user._id
         })
           .populate('bucketId', 'title')
-          .select('title priority progress bucketId')
+          .select('title priority progress bucketId activityType estimatedDays dueDate')
 
         if (!tasks.length) {
           return res.json({
@@ -423,24 +485,30 @@ User: filter tasks for jhon with activity type coding
 
       const taskLines = tasks.map((task, index) => {
         const bucket = task.bucketId?.title || 'No Bucket'
-        const progress = task.progress.replace('_', ' ')
+        const progress = task.progress ? task.progress.replace('_', ' ') : 'Not Set'
+        const activity = task.activityType || 'Not Set'
+        const eta = task.estimatedDays ? `${task.estimatedDays} days` : 'Not Set'
+        const due = task.dueDate ? format(new Date(task.dueDate), 'MMM dd, yyyy') : 'Not Set'
 
         return (
           `${index + 1}. ${task.title}${LINE}` +
-          `Priority: ${task.priority}${LINE}` +
-          `Progress: ${progress}${LINE}` +
-          `Bucket: ${bucket}`
+          `   • Priority: ${task.priority || 'None'}${LINE}` +
+          `   • Progress: ${progress}${LINE}` +
+          `   • Activity Type: ${activity}${LINE}` +
+          `   • Est. Time: ${eta}${LINE}` +
+          `   • Due Date: ${due}${LINE}` +
+          `   • Bucket: ${bucket}`
         )
       })
 
       return res.json({
-        reply: `Here is all work assigned to ${user.name}:${LINE}${LINE}${taskLines.join(`${LINE}${LINE}`)}`
+        reply: `Here is the work assigned to ${user.name}:${LINE}${LINE}${taskLines.join(`${LINE}${LINE}`)}`
       })
       }
 
 
-      /* ========== CREATE TASK (FULL) ========== */
-      case 'create_task': {
+      /* ========== ADD TASK (Formerly create_task) ========== */
+      case 'add_task': {
         // Required: title, bucket
         // Optional: description, assignedTo, priority, progress, activityType, etaDays, startDate, dueDate, checklist
         const missing = [];
@@ -451,13 +519,14 @@ User: filter tasks for jhon with activity type coding
         if (missing.length) {
           responded = true;
           return res.json({
-            reply: `Please provide: ${missing.join(', ')} to create a task.`
+            reply: `Please provide: ${missing.join(', ')} to add a task.`
           });
         }
 
         const project = await Board.findById(ctx.activeBoardId);
-        if (!project)
-          return res.json({ reply: 'Please select a project first.' });
+        if (!project) {
+           return listProjectsAndAsk(res, 'Please select a project first.')
+        }
 
         const bucket = await Bucket.findOne({
           title: new RegExp(`^${data.bucket}$`, 'i'),
@@ -542,7 +611,7 @@ Try: "set progress to ${data.activityType} in ${data.title}".`
 
   const project = await Board.findById(ctx.activeBoardId)
   if (!project) {
-    return res.json({ reply: 'Please select a project first.' })
+    return listProjectsAndAsk(res, 'Please select a project first.')
   }
 
   const buckets = await Bucket.find({ boardId: project._id })
@@ -706,6 +775,8 @@ Activity Type: ${activityLabel}`
         })
         if (!project) break
 
+        saveRenameUndo(ctx, Board, project._id, project.title)
+
         project.title = data.newName
         await project.save()
         break
@@ -721,8 +792,9 @@ Activity Type: ${activityLabel}`
 
 
         const project = await Board.findById(ctx.activeBoardId)
-        if (!project)
-          return res.json({ reply: 'Please select a project first.' })
+        if (!project) {
+          return listProjectsAndAsk(res, 'Please select a project first.')
+        }
 
         const bucket = await Bucket.findOne({
           title: new RegExp(`^${data.oldName}$`, 'i'),
@@ -731,6 +803,8 @@ Activity Type: ${activityLabel}`
 
         if (!bucket)
           return res.json({ reply: 'Bucket not found.' })
+
+        saveRenameUndo(ctx, Bucket, bucket._id, bucket.title)
 
         bucket.title = data.newName
         await bucket.save()
@@ -752,9 +826,7 @@ Activity Type: ${activityLabel}`
 
   const project = await Board.findById(ctx.activeBoardId)
   if (!project) {
-    finalReply = 'Please select a project first.'
-    responded = true
-    break
+    return listProjectsAndAsk(res, 'Please select a project first.')
   }
 
   const bucket = data.bucket
@@ -781,6 +853,8 @@ Activity Type: ${activityLabel}`
     break
   }
 
+  saveRenameUndo(ctx, Task, task._id, task.title)
+
   task.title = normalize(data.newName)
   await task.save()
 
@@ -790,7 +864,7 @@ Activity Type: ${activityLabel}`
 }
 
 
-        /* ==========s CREATE PROJECT ========== */
+        /* ========== CREATE PROJECT ========== */
         case 'create_project': {
           if (!data.title){
             responded = true
@@ -819,8 +893,7 @@ return res.json({ reply: ai.reply })
           })
 
           if (!project){
-            responded = true
-return res.json({ reply: 'Project not found.' })
+             return listProjectsAndAsk(res, 'Project not found.')
         }
           ctx.activeBoardId = project._id
           return res.json({ reply: `Switched to project "${project.title}"` })
@@ -838,9 +911,7 @@ return res.json({ reply: ai.reply })
 
           if (!project) {
             ctx.activeBoardId = null
-            return res.json({
-              reply: 'Active project is invalid. Please select a project.'
-            })
+            return listProjectsAndAsk(res, 'Active project is invalid. Please select a project.')
           }
 
           await Bucket.create({
@@ -852,72 +923,6 @@ return res.json({ reply: ai.reply })
             reply: `Bucket "${data.title}" added to project "${project.title}"`
           })
         }
-
-            /* ========== ADD TASK ========== */
-            case 'add_task': {
-        if (!data.title || !data.bucket){
-          responded = true
-return res.json({ reply: ai.reply })
-        }
-
-
-        const project = await Board.findById(ctx.activeBoardId)
-        if (!project)
-          return res.json({ reply: 'Please select a project first.' })
-
-        const bucket = await Bucket.findOne({
-          title: new RegExp(`^${data.bucket}$`, 'i'),
-          boardId: project._id
-        })
-        if (!bucket)
-          return res.json({ reply: 'Bucket not found in the active project.' })
-
-        // 🧠 resolve users
-        let assignedIds = []
-        if (data.assignedTo?.length) {
-          const { users, missing } = await resolveUsersByNames(data.assignedTo)
-          if (missing.length) {
-            return res.json({
-              reply: `User(s) ${missing.join(', ')} do not exist. Should I create them?`
-            })
-          }
-          assignedIds = users
-        }
-
-    // 🧠 validate enums dynamically
-    const priorityEnum = enumFromSchema(Task.schema, 'priority')
-    const progressEnum = enumFromSchema(Task.schema, 'progress')
-
-    const taskData = {
-      title: normalize(data.title),
-      bucketId: bucket._id,
-      description: normalize(data.description || ''),
-      assignedTo: assignedIds,
-      labels: data.labels || [],
-      priority: priorityEnum.includes(data.priority)
-        ? data.priority
-        : undefined,
-      progress: progressEnum.includes(data.progress)
-        ? data.progress
-        : undefined,
-      repeat: data.repeat,
-      estimatedDays: data.estimatedDays,
-      activityType: data.activityType
-    }
-
-    // 🗓 date handling (reusing utils)
-    if (data.startDate)
-      taskData.startDate = expandUserDay(data.startDate)
-
-    if (data.dueDate)
-      taskData.dueDate = expandUserDay(data.dueDate)
-
-    const task = await Task.create(taskData)
-
-    return res.json({
-      reply: `Task "${task.title}" added to project "${project.title}".`
-    })
-  }
 
         /* ========== ADD MEMBER ========== */
         case 'add_member': {
@@ -937,7 +942,7 @@ return res.json({ reply: ai.reply })
             avatarColor: 'bg-blue-500'
           });
           responded = true;
-          return res.json({ reply: ai.reply });
+          return res.json({ reply: `Member "${data.name}" added successfully.` });
 
         }
 
@@ -980,28 +985,73 @@ return res.json({ reply: ai.reply })
           }
 {
           responded = true
-return res.json({ reply: ai.reply })
+return res.json({ reply: ai.reply || `${data.type} deleted.` })
 }
 
         }
 
         /* ========== UNDO ========== */
         case 'undo': {
-          if (!ctx.lastDeleted)
-            return res.json({ reply: 'Nothing to undo.' })
+          // Priority 1: Undo Delete
+          if (ctx.lastDeleted) {
+            await ctx.lastDeleted.model.create(ctx.lastDeleted.data)
+            ctx.lastDeleted = null
+            return res.json({ reply: 'Undo successful: Deleted item restored. ✅' })
+          }
 
-          await ctx.lastDeleted.model.create(ctx.lastDeleted.data)
-          ctx.lastDeleted = null
+          // Priority 2: Undo Rename
+          if (ctx.lastRename) {
+            const { model, id, oldName } = ctx.lastRename
 
-          return res.json({ reply: 'Undo successful ✅' })
+            await model.findByIdAndUpdate(id, { title: oldName })
+            ctx.lastRename = null
+            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅` })
+          }
+
+          return res.json({ reply: 'Nothing to undo.' })
         }
 
         /* ========== SHOW PROJECTS ========== */
         case 'show_projects': {
           const projects = await Board.find().sort({ createdAt: -1 })
-          ctx.lastResult = projects;
-          responded = true;
-          return res.json({ reply: ai.reply });
+          const projectList = projects.length > 0
+            ? projects.map(p => `• ${p.title}`).join('\n')
+            : 'No projects found.'
+
+          return res.json({
+            reply: `Here are your projects:\n${projectList}`
+          })
+        }
+
+        /* ========== SHOW BUCKETS ========== */
+        case 'show_buckets': {
+          const project = await Board.findById(ctx.activeBoardId)
+          if (!project) {
+             return listProjectsAndAsk(res, 'Please select a project first.')
+          }
+
+          const buckets = await Bucket.find({ boardId: project._id })
+          ctx.lastResult = buckets
+
+          const bucketList = buckets.length > 0
+             ? buckets.map(b => `• ${b.title}`).join('\n')
+             : 'No buckets found.'
+
+          return res.json({
+            reply: `Here are the buckets in ${project.title}:\n${bucketList}`
+          })
+        }
+
+        /* ========== SHOW MEMBERS ========== */
+        case 'show_members': {
+          const users = await User.find().sort({ name: 1 })
+          const userList = users.length > 0
+             ? users.map(u => `• ${u.name}`).join('\n')
+             : 'No members found.'
+
+          return res.json({
+            reply: `Here are the members:\n${userList}`
+          })
         }
 
       /* ========== SHOW TASKS ========== */
@@ -1031,8 +1081,13 @@ return res.json({ reply: ai.reply })
     const tasks = await Task.find({ bucketId: bucket._id })
     ctx.lastResult = tasks
 
-    // reply stays generic; frontend reads ctx.lastResult
-    break
+    const taskList = tasks.length > 0
+      ? tasks.map(t => `• ${t.title} [${t.priority || '-'}]`).join('\n')
+      : 'No tasks found.'
+
+    return res.json({
+      reply: `Tasks in ${bucket.title}:\n${taskList}`
+    })
   }
 
   /* =====================================================
@@ -1079,10 +1134,18 @@ return res.json({ reply: ai.reply })
       startDate: { $lte: day },
       dueDate: { $gte: day }
     })
+      .select('title priority progress activityType estimatedDays dueDate')
 
     ctx.lastResult = tasks
-    finalReply = ai.reply || `Here is ${user.name}'s schedule.`
-    break
+
+    const taskLines = tasks.map((task, index) => {
+        const activity = task.activityType || 'Not Set'
+        return `${index + 1}. ${task.title} (${activity})`
+      })
+
+    return res.json({
+      reply: `Here is ${user.name}'s schedule for ${format(day, 'yyyy-MM-dd')}:\n${taskLines.join('\n')}`
+    })
   }
 
   /* =====================================================
@@ -1097,8 +1160,9 @@ return res.json({ reply: ai.reply })
     })
 
     ctx.lastResult = tasks
-    finalReply = ai.reply || 'Here are today’s tasks.'
-    break
+
+    const taskList = tasks.map(t => `• ${t.title}`).join('\n')
+    return res.json({ reply: `Tasks for Today:\n${taskList}` })
   }
 
   /* =====================================================
@@ -1113,8 +1177,8 @@ return res.json({ reply: ai.reply })
     })
 
     ctx.lastResult = tasks
-    finalReply = ai.reply || 'Here are tomorrow’s tasks.'
-    break
+    const taskList = tasks.map(t => `• ${t.title}`).join('\n')
+    return res.json({ reply: `Tasks for Tomorrow:\n${taskList}` })
   }
 
   case 'none':
@@ -1143,7 +1207,3 @@ return res.json({ reply: ai.reply })
   })
                                  
 module.exports = router;
-
-
-
-
