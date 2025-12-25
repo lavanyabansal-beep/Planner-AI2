@@ -160,7 +160,7 @@ CRITICAL BEHAVIOR RULES (NON-NEGOTIABLE)
 3️⃣ ACTIVE PROJECT HANDLING (AUTOMATIC)
 - NEVER ask the user to repeatedly "set active project".
 - Determine project using this priority:
-  1. Project explicitly mentioned by user
+  1. Project explicitly mentioned by user (EXTRACT THIS!)
   2. Previously active project
   3. If only one project exists → auto select
   4. Otherwise → ask ONCE and remember
@@ -237,6 +237,7 @@ add_bucket
 add_task
 add_member
 delete
+delete_all
 rename_project
 rename_bucket
 rename_task
@@ -251,6 +252,9 @@ show_user_day
 show_today
 show_tomorrow
 show_sprint_view
+show_activity_types
+confirm
+cancel
 undo
 none
 
@@ -263,6 +267,7 @@ REQUIRED FIELD EXTRACTION
 • add_task → data.title AND data.bucket
 • rename_* → data.oldName AND data.newName
 • delete → data.type AND data.name
+• delete_all → data.type (projects, members, tasks)
 • add_member → data.name
 • update_task → data.title (and fields being updated)
 
@@ -285,6 +290,9 @@ SPECIAL RULES
   - Parallel Allowed
 
 • If user says "undo" → ALWAYS use action: undo
+
+• If user says "yes" or "confirm" (after a confirmation request) → use action: confirm
+• If user says "no" or "cancel" → use action: cancel
 
 • If information is missing:
   - Use action: none
@@ -323,13 +331,22 @@ User: undo
 → revert rename
 
 User: delete all projects
-→ ask for confirmation before action
+→ { "actions": [{ "action": "delete_all", "data": { "type": "project" } }] }
 
-User: who are the members?
-→ show_members
+User: yes (answering confirmation)
+→ { "actions": [{ "action": "confirm" }] }
 
-User: how many projects do i have?
-→ show_projects
+User: what all activity type do you have
+→ { "actions": [{ "action": "show_activity_types" }] }
+
+User: assign generative to ram
+→ { "actions": [{ "action": "update_task", "data": { "title": "generative", "assignedTo": ["ram"] } }] }
+
+User: what work is assigned to ram
+→ { "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }] }
+
+User: ram (answering "Which user?")
+→ { "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }] }
 
 ====================================================
 FINAL RULE
@@ -438,6 +455,7 @@ ALWAYS guide forward.
         🔁 AUTO SWITCH PROJECT IF PROVIDED
       ===================================================== */
       let finalReply = ai.reply || 'How can I help you with your project?';
+
       for (const step of actions) {
         const action = step.action || 'none'
         const data = step.data || {}
@@ -451,6 +469,14 @@ ALWAYS guide forward.
       }
 
       switch (action) {
+
+      /* ========== SHOW ACTIVITY TYPES ========== */
+      case 'show_activity_types': {
+        const list = allowedActivityTypes.map(t => `• ${t.replace(/_/g, ' ')}`).join('\n')
+        return res.json({
+          reply: `Here are the available activity types:\n${list}`
+        })
+      }
 
 
       /* ========== SHOW USER TASKS (ALL – CHATBOT OUTPUT) ========== */
@@ -989,6 +1015,64 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
 }
 
         }
+
+        /* ========== DELETE ALL ========== */
+        case 'delete_all': {
+          if (!data.type) {
+            return res.json({ reply: 'What would you like to delete all of?' })
+          }
+
+          ctx.pendingConfirmation = {
+            action: 'delete_all',
+            type: data.type
+          }
+
+          return res.json({
+            reply: `⚠️ Are you sure you want to PERMANENTLY delete ALL ${data.type}s? This cannot be undone.`
+          })
+        }
+
+        /* ========== CONFIRM ========== */
+        case 'confirm': {
+          if (!ctx.pendingConfirmation) {
+            return res.json({ reply: 'There is nothing pending to confirm.' })
+          }
+
+          const { action, type } = ctx.pendingConfirmation
+          ctx.pendingConfirmation = null
+
+          if (action === 'delete_all') {
+            if (type === 'project') {
+              await Board.deleteMany({})
+              ctx.activeBoardId = null
+              return res.json({ reply: 'All projects have been deleted.' })
+            }
+            if (type === 'member') {
+              await User.deleteMany({})
+              return res.json({ reply: 'All members have been deleted.' })
+            }
+            if (type === 'task') {
+               // Deletes all tasks in active project or globally?
+               // Assuming globally for now based on "delete all".
+               // Or maybe restrict to active project?
+               // "delete all projects" implies global.
+               await Task.deleteMany({})
+               return res.json({ reply: 'All tasks have been deleted.' })
+            }
+          }
+
+          return res.json({ reply: 'Action confirmed.' })
+        }
+
+        /* ========== CANCEL ========== */
+        case 'cancel': {
+           if (ctx.pendingConfirmation) {
+             ctx.pendingConfirmation = null
+             return res.json({ reply: 'Action cancelled.' })
+           }
+           return res.json({ reply: 'Nothing to cancel.' })
+        }
+
 
         /* ========== UNDO ========== */
         case 'undo': {
