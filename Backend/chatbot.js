@@ -68,7 +68,7 @@ const allowedActivityTypes = [
   'RECURRING_WEEKLY',
   'BUFFER',
   'PARALLEL_ALLOWED',
-  
+  'MILESTONE'
 ]
 
 // Normalize user input → DB value
@@ -92,7 +92,9 @@ function normalizeActivityType(input) {
     'buffer': 'BUFFER',
 
     'parallel allowed': 'PARALLEL_ALLOWED',
-    'parallel': 'PARALLEL_ALLOWED'
+    'parallel': 'PARALLEL_ALLOWED',
+
+    'milestone': 'MILESTONE'
   }
 
   return map[value] || null
@@ -251,6 +253,7 @@ show_today
 show_tomorrow
 show_sprint_view
 show_activity_types
+show_allowed_values
 show_capabilities
 greet
 confirm
@@ -271,24 +274,21 @@ REQUIRED FIELD EXTRACTION
 • delete_all → data.type (projects, members, tasks)
 • add_member → data.name
 • update_task → data.title (and fields being updated)
+• show_allowed_values → data.field (priority, progress, activityType)
 
 ====================================================
 SPECIAL RULES
 ====================================================
 
-• “progress” ≠ “activity type”
-• Progress values only:
-  - not started
-  - in progress
-  - completed
+• **PRIORITY vs PROGRESS**:
+  - **Priority** values are ONLY: urgent, important, medium, low
+  - **Progress** values are ONLY: not started, in progress, completed
+  - **Activity Types** are ONLY: One-Time, Continuous, API/1-Day, Recurring Weekly, Buffer, Parallel Allowed, Milestone
 
-• Activity types only:
-  - One-Time
-  - Continuous
-  - API/1-Day
-  - Recurring Weekly
-  - Buffer
-  - Parallel Allowed
+• If user says "set priority to not started", CORRECT them to "progress".
+• If user says "set progress to urgent", CORRECT them to "priority".
+
+• If user asks "what values can I set for X", use action: show_allowed_values with data.field = X.
 
 • If user says "undo" → ALWAYS use action: undo
 
@@ -346,11 +346,11 @@ User: delete all projects
 User: yes (answering confirmation)
 → { "actions": [{ "action": "confirm" }] }
 
-User: what all activity type do you have
-→ { "actions": [{ "action": "show_activity_types" }] }
+User: what values for priority
+→ { "actions": [{ "action": "show_allowed_values", "data": { "field": "priority" } }] }
 
-User: what tasks can you perform
-→ { "actions": [{ "action": "show_capabilities" }] }
+User: what can i set progress to
+→ { "actions": [{ "action": "show_allowed_values", "data": { "field": "progress" } }] }
 
 User: assign generative to ram
 → { "actions": [{ "action": "update_task", "data": { "title": "generative", "assignedTo": ["ram"] } }] }
@@ -557,6 +557,31 @@ Just ask me naturally! 🚀`
         return res.json({
           reply: `Here are the available activity types:\n${list}`
         })
+      }
+
+      /* ========== SHOW ALLOWED VALUES ========== */
+      case 'show_allowed_values': {
+        const field = data.field ? data.field.toLowerCase() : null;
+        let values = [];
+        let name = '';
+
+        if (field === 'priority') {
+            values = enumFromSchema(Task.schema, 'priority');
+            name = 'Priority';
+        } else if (field === 'progress') {
+            values = enumFromSchema(Task.schema, 'progress');
+            name = 'Progress';
+        } else if (field === 'activitytype' || field === 'activity type') {
+            values = allowedActivityTypes;
+            name = 'Activity Type';
+        } else {
+            return res.json({ reply: 'I can show allowed values for: Priority, Progress, and Activity Type.' });
+        }
+
+        const list = values.map(v => `• ${v.replace(/_/g, ' ')}`).join('\n');
+        return res.json({
+            reply: `Here are the allowed values for ${name}:\n${list}`
+        });
       }
 
 
@@ -841,7 +866,8 @@ Allowed values are:
 • API/1-Day
 • Recurring Weekly
 • Buffer
-• Parallel Allowed`
+• Parallel Allowed
+• Milestone`
     })
   }
 
@@ -891,7 +917,8 @@ Allowed values are:
   API_1_DAY: 'API/1-Day',
   RECURRING_WEEKLY: 'Recurring Weekly',
   BUFFER: 'Buffer',
-  PARALLEL_ALLOWED: 'Parallel Allowed'
+  PARALLEL_ALLOWED: 'Parallel Allowed',
+  MILESTONE: 'Milestone'
 }
 
 const activityLabel = task.activityType
