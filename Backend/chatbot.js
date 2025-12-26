@@ -950,19 +950,31 @@ Activity Type: ${activityLabel}`,
 
       /* ========== RENAME PROJECT ========== */
       case 'rename_project': {
-        if (!data.oldName || !data.newName) break
+        if (!data.oldName || !data.newName) {
+            finalReply = "Please provide the old and new project names.";
+            break;
+        }
 
         const project = await Board.findOne({
           title: new RegExp(`^${data.oldName}$`, 'i')
         })
-        if (!project) break
+
+        if (!project) {
+            finalReply = `Project "${data.oldName}" not found.`;
+            break;
+        }
 
         saveRenameUndo(ctx, Board, project._id, project.title)
 
         project.title = data.newName
         await project.save()
         shouldRefresh = true; // Renamed
-        break
+
+        return res.json({
+            reply: `Project renamed to "${data.newName}".`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
+        });
       }
 
 
@@ -1006,7 +1018,6 @@ Activity Type: ${activityLabel}`,
       case 'rename_task': {
   if (!data.oldName || !data.newName) {
     finalReply = 'Please provide old and new task names.'
-    responded = true
     break
   }
 
@@ -1024,7 +1035,6 @@ Activity Type: ${activityLabel}`,
 
   if (!bucket) {
     finalReply = 'Bucket not found.'
-    responded = true
     break
   }
 
@@ -1035,7 +1045,6 @@ Activity Type: ${activityLabel}`,
 
   if (!task) {
     finalReply = `Task "${data.oldName}" not found in "${bucket.title}".`
-    responded = true
     break
   }
 
@@ -1045,9 +1054,11 @@ Activity Type: ${activityLabel}`,
   await task.save()
   shouldRefresh = true; // Renamed
 
-  finalReply = `Task renamed to "${task.title}".`
-  responded = true
-  break
+  return res.json({
+    reply: `Task renamed to "${task.title}".`,
+    shouldRefresh,
+    activeBoardId: ctx.activeBoardId
+  })
 }
 
 
