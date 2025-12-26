@@ -484,7 +484,7 @@ ALWAYS guide forward.
         const action = step.action || 'none'
         const data = step.data || {}
 
-      // 🔁 auto switch project
+      // 🔁 auto switch project (VALIDATED)
       if (data.project) {
         const project = await Board.findOne({
           title: new RegExp(`^${data.project}$`, 'i')
@@ -492,6 +492,10 @@ ALWAYS guide forward.
         if (project) {
             ctx.activeBoardId = project._id
             shouldRefresh = true
+        } else {
+            // 🔥 Project NOT FOUND - Validate and Stop
+            responded = true;
+            return listProjectsAndAsk(res, `Project "${data.project}" does not exist.`)
         }
       }
 
@@ -629,13 +633,15 @@ Just ask me naturally! 🚀`
           }
 
           const existingBuckets = await Bucket.find({ boardId: project._id })
-          const bucketList = existingBuckets.map(b => `• ${b.title}`).join('\n')
+          const bucketList = existingBuckets.length > 0
+            ? existingBuckets.map(b => `• ${b.title}`).join('\n')
+            : 'No buckets found.'
 
           return res.json({
             reply: `Bucket "${data.bucket}" does not exist in project "${project.title}".
 
 Available buckets:
-${bucketList || 'None'}
+${bucketList}
 
 Would you like to create "${data.bucket}"?`
           })
@@ -800,8 +806,8 @@ if (data.progress) {
     data.progress,
     enumFromSchema(Task.schema, 'progress')
   )
-})
-}
+  })
+  }
 
   task.progress = matchedProgress
 }
