@@ -154,8 +154,8 @@ CRITICAL BEHAVIOR RULES (NON-NEGOTIABLE)
 
 2️⃣ CONTEXT AWARENESS
 - Remember previous turns.
-- If you ask a question and the user answers it, CONTINUE the action.
-- Never forget what you were trying to do.
+- If the assistant just asked "Which project?", and the user says "testing", interpret it as "set active project to testing".
+- If the assistant just asked "Create bucket X?", and the user says "yes", interpret it as "confirm".
 
 3️⃣ ACTIVE PROJECT HANDLING (AUTOMATIC)
 - NEVER ask the user to repeatedly "set active project".
@@ -253,6 +253,7 @@ show_today
 show_tomorrow
 show_sprint_view
 show_activity_types
+show_capabilities
 confirm
 cancel
 undo
@@ -293,6 +294,12 @@ SPECIAL RULES
 
 • If user says "yes" or "confirm" (after a confirmation request) → use action: confirm
 • If user says "no" or "cancel" → use action: cancel
+
+• If user asks "what can you do" or "help" → use action: show_capabilities
+• If user asks "what activity types" → use action: show_activity_types
+
+• **Single Word Project Selection**:
+  If the user provides a single word (e.g., "testing", "gan") and it looks like a project name, especially after being asked to select a project, assume action: set_active_project with data.title = <word>.
 
 • If information is missing:
   - Use action: none
@@ -339,6 +346,9 @@ User: yes (answering confirmation)
 User: what all activity type do you have
 → { "actions": [{ "action": "show_activity_types" }] }
 
+User: what tasks can you perform
+→ { "actions": [{ "action": "show_capabilities" }] }
+
 User: assign generative to ram
 → { "actions": [{ "action": "update_task", "data": { "title": "generative", "assignedTo": ["ram"] } }] }
 
@@ -347,6 +357,9 @@ User: what work is assigned to ram
 
 User: ram (answering "Which user?")
 → { "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }] }
+
+User: testing (answering "Which project?")
+→ { "actions": [{ "action": "set_active_project", "data": { "title": "testing" } }] }
 
 ====================================================
 FINAL RULE
@@ -470,6 +483,22 @@ ALWAYS guide forward.
 
       switch (action) {
 
+      /* ========== SHOW CAPABILITIES ========== */
+      case 'show_capabilities': {
+        return res.json({
+          reply: `I can help you with the following:
+• Create and manage projects (boards)
+• Add, rename, and delete buckets (lists)
+• Add, update, and assign tasks
+• Manage team members
+• Show daily schedules and sprint views
+• Undo recent changes
+• Answer questions about your project data (e.g., "what is ram doing")
+
+Just ask me naturally! 🚀`
+        })
+      }
+
       /* ========== SHOW ACTIVITY TYPES ========== */
       case 'show_activity_types': {
         const list = allowedActivityTypes.map(t => `• ${t.replace(/_/g, ' ')}`).join('\n')
@@ -558,8 +587,27 @@ ALWAYS guide forward.
           title: new RegExp(`^${data.bucket}$`, 'i'),
           boardId: project._id
         });
-        if (!bucket)
-          return res.json({ reply: 'Bucket not found in the active project.' });
+
+        // 🚀 Auto-prompt to create bucket if missing
+        if (!bucket) {
+          ctx.pendingBucketCreation = {
+            bucketName: data.bucket,
+            taskData: data,
+            projectId: project._id
+          }
+
+          const existingBuckets = await Bucket.find({ boardId: project._id })
+          const bucketList = existingBuckets.map(b => `• ${b.title}`).join('\n')
+
+          return res.json({
+            reply: `Bucket "${data.bucket}" does not exist in project "${project.title}".
+
+Available buckets:
+${bucketList || 'None'}
+
+Would you like to create "${data.bucket}"?`
+          })
+        }
 
         // Validate users
         let assignedIds = [];
@@ -1034,31 +1082,69 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
 
         /* ========== CONFIRM ========== */
         case 'confirm': {
-          if (!ctx.pendingConfirmation) {
-            return res.json({ reply: 'There is nothing pending to confirm.' })
+
+          // 1. Pending Delete All
+          if (ctx.pendingConfirmation) {
+            const { action, type } = ctx.pendingConfirmation
+            ctx.pendingConfirmation = null
+
+            if (action === 'delete_all') {
+              if (type === 'project') {
+                await Board.deleteMany({})
+                ctx.activeBoardId = null
+                return res.json({ reply: 'All projects have been deleted.' })
+              }
+              if (type === 'member') {
+                await User.deleteMany({})
+                return res.json({ reply: 'All members have been deleted.' })
+              }
+              if (type === 'task') {
+                 await Task.deleteMany({})
+                 return res.json({ reply: 'All tasks have been deleted.' })
+              }
+            }
           }
 
-          const { action, type } = ctx.pendingConfirmation
-          ctx.pendingConfirmation = null
+          // 2. Pending Bucket Creation
+          if (ctx.pendingBucketCreation) {
+             const { bucketName, taskData, projectId } = ctx.pendingBucketCreation
+             ctx.pendingBucketCreation = null
 
-          if (action === 'delete_all') {
-            if (type === 'project') {
-              await Board.deleteMany({})
-              ctx.activeBoardId = null
-              return res.json({ reply: 'All projects have been deleted.' })
-            }
-            if (type === 'member') {
-              await User.deleteMany({})
-              return res.json({ reply: 'All members have been deleted.' })
-            }
-            if (type === 'task') {
-               // Deletes all tasks in active project or globally?
-               // Assuming globally for now based on "delete all".
-               // Or maybe restrict to active project?
-               // "delete all projects" implies global.
-               await Task.deleteMany({})
-               return res.json({ reply: 'All tasks have been deleted.' })
-            }
+             // Create Bucket
+             const bucket = await Bucket.create({
+                title: bucketName,
+                boardId: projectId
+             })
+
+             // Then Create Task
+             // Re-validate logic similar to add_task
+             // (Simplified here assuming data is valid as it came from add_task)
+             const priorityEnum = enumFromSchema(Task.schema, 'priority');
+             const progressEnum = enumFromSchema(Task.schema, 'progress');
+
+             let assignedIds = [];
+             if (taskData.assignedTo?.length) {
+               const { users } = await resolveUsersByNames(taskData.assignedTo);
+               assignedIds = users;
+             }
+
+             const task = await Task.create({
+                title: normalize(taskData.title),
+                bucketId: bucket._id,
+                description: normalize(taskData.description || ''),
+                assignedTo: assignedIds,
+                labels: taskData.labels || [],
+                priority: priorityEnum.includes(taskData.priority) ? taskData.priority : undefined,
+                progress: progressEnum.includes(taskData.progress) ? taskData.progress : undefined,
+                estimatedDays: taskData.etaDays,
+                activityType: taskData.activityType
+                  ? normalizeActivityType(taskData.activityType)
+                  : undefined
+             })
+
+             return res.json({
+               reply: `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`
+             })
           }
 
           return res.json({ reply: 'Action confirmed.' })
@@ -1069,6 +1155,10 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
            if (ctx.pendingConfirmation) {
              ctx.pendingConfirmation = null
              return res.json({ reply: 'Action cancelled.' })
+           }
+           if (ctx.pendingBucketCreation) {
+             ctx.pendingBucketCreation = null
+             return res.json({ reply: 'Task creation cancelled.' })
            }
            return res.json({ reply: 'Nothing to cancel.' })
         }
