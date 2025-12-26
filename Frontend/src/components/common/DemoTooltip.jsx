@@ -125,7 +125,8 @@ const DemoTooltip = () => {
       {/* Overlay with spotlight cutout effect */}
       <div className="fixed inset-0 z-[9998] pointer-events-none">
         {/* Spotlight (highlighted area) - No dark overlay for clear visibility */}
-        {step.placement !== 'center' && Object.keys(spotlightStyle).length > 0 && (
+        {/* Hide spotlight if action is completed */}
+        {step.placement !== 'center' && Object.keys(spotlightStyle).length > 0 && !actionCompleted && (
           <div
             className="absolute transition-all duration-300 ease-out pointer-events-none"
             style={{
