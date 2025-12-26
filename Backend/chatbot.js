@@ -154,8 +154,8 @@ CRITICAL BEHAVIOR RULES (NON-NEGOTIABLE)
 
 2️⃣ CONTEXT AWARENESS
 - Remember previous turns.
-- If the assistant just asked "Which project?", and the user says "testing", interpret it as "set active project to testing".
-- If the assistant just asked "Create bucket X?", and the user says "yes", interpret it as "confirm".
+- If you ask a question and the user answers it, CONTINUE the action.
+- Never forget what you were trying to do.
 
 3️⃣ ACTIVE PROJECT HANDLING (AUTOMATIC)
 - NEVER ask the user to repeatedly "set active project".
@@ -253,7 +253,6 @@ show_today
 show_tomorrow
 show_sprint_view
 show_activity_types
-show_capabilities
 confirm
 cancel
 undo
@@ -294,12 +293,6 @@ SPECIAL RULES
 
 • If user says "yes" or "confirm" (after a confirmation request) → use action: confirm
 • If user says "no" or "cancel" → use action: cancel
-
-• If user asks "what can you do" or "help" → use action: show_capabilities
-• If user asks "what activity types" → use action: show_activity_types
-
-• **Single Word Project Selection**:
-  If the user provides a single word (e.g., "testing", "gan") and it looks like a project name, especially after being asked to select a project, assume action: set_active_project with data.title = <word>.
 
 • If information is missing:
   - Use action: none
@@ -346,9 +339,6 @@ User: yes (answering confirmation)
 User: what all activity type do you have
 → { "actions": [{ "action": "show_activity_types" }] }
 
-User: what tasks can you perform
-→ { "actions": [{ "action": "show_capabilities" }] }
-
 User: assign generative to ram
 → { "actions": [{ "action": "update_task", "data": { "title": "generative", "assignedTo": ["ram"] } }] }
 
@@ -357,9 +347,6 @@ User: what work is assigned to ram
 
 User: ram (answering "Which user?")
 → { "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }] }
-
-User: testing (answering "Which project?")
-→ { "actions": [{ "action": "set_active_project", "data": { "title": "testing" } }] }
 
 ====================================================
 FINAL RULE
@@ -427,7 +414,7 @@ ALWAYS guide forward.
 
 
     const ctx = getCtx(req)
-    let shouldRefresh = false // Track if state changed
+
 
     // frontend-controlled active project
     if (req.body.activeProjectId) {
@@ -442,7 +429,6 @@ ALWAYS guide forward.
       if (count === 1) {
         const onlyProject = await Board.findOne()
         ctx.activeBoardId = onlyProject._id
-        shouldRefresh = true // Maybe refreshed selection
       }
     }
 
@@ -469,7 +455,7 @@ ALWAYS guide forward.
         🔁 AUTO SWITCH PROJECT IF PROVIDED
       ===================================================== */
       let finalReply = ai.reply || 'How can I help you with your project?';
-
+      
       for (const step of actions) {
         const action = step.action || 'none'
         const data = step.data || {}
@@ -479,29 +465,10 @@ ALWAYS guide forward.
         const project = await Board.findOne({
           title: new RegExp(`^${data.project}$`, 'i')
         })
-        if (project) {
-            ctx.activeBoardId = project._id
-            shouldRefresh = true
-        }
+        if (project) ctx.activeBoardId = project._id
       }
 
       switch (action) {
-
-      /* ========== SHOW CAPABILITIES ========== */
-      case 'show_capabilities': {
-        return res.json({
-          reply: `I can help you with the following:
-• Create and manage projects (boards)
-• Add, rename, and delete buckets (lists)
-• Add, update, and assign tasks
-• Manage team members
-• Show daily schedules and sprint views
-• Undo recent changes
-• Answer questions about your project data (e.g., "what is ram doing")
-
-Just ask me naturally! 🚀`
-        })
-      }
 
       /* ========== SHOW ACTIVITY TYPES ========== */
       case 'show_activity_types': {
@@ -591,27 +558,8 @@ Just ask me naturally! 🚀`
           title: new RegExp(`^${data.bucket}$`, 'i'),
           boardId: project._id
         });
-
-        // 🚀 Auto-prompt to create bucket if missing
-        if (!bucket) {
-          ctx.pendingBucketCreation = {
-            bucketName: data.bucket,
-            taskData: data,
-            projectId: project._id
-          }
-
-          const existingBuckets = await Bucket.find({ boardId: project._id })
-          const bucketList = existingBuckets.map(b => `• ${b.title}`).join('\n')
-
-          return res.json({
-            reply: `Bucket "${data.bucket}" does not exist in project "${project.title}".
-
-Available buckets:
-${bucketList || 'None'}
-
-Would you like to create "${data.bucket}"?`
-          })
-        }
+        if (!bucket)
+          return res.json({ reply: 'Bucket not found in the active project.' });
 
         // Validate users
         let assignedIds = [];
@@ -666,11 +614,8 @@ Would you like to create "${data.bucket}"?`
       taskData.activityType = normalizedActivity
       }
       const task = await Task.create(taskData);
-      shouldRefresh = true; // Task Created
       return res.json({
-      reply: `Task "${task.title}" created in bucket "${bucket.title}".`,
-      shouldRefresh,
-      activeBoardId: ctx.activeBoardId
+      reply: `Task "${task.title}" created in bucket "${bucket.title}".`
       });
             }
 
@@ -814,7 +759,6 @@ Allowed values are:
   }
 
   await task.save()
-  shouldRefresh = true; // Task Updated
 
   console.log('✅ TASK UPDATED:', {
     id: task._id,
@@ -841,9 +785,7 @@ return res.json({
   reply: `Task "${task.title}" updated successfully.
 Priority: ${task.priority || 'unchanged'}
 Progress: ${task.progress || 'unchanged'}
-Activity Type: ${activityLabel}`,
-  shouldRefresh,
-  activeBoardId: ctx.activeBoardId
+Activity Type: ${activityLabel}`
 })
 
 }
@@ -863,7 +805,6 @@ Activity Type: ${activityLabel}`,
 
         project.title = data.newName
         await project.save()
-        shouldRefresh = true; // Renamed
         break
       }
 
@@ -893,12 +834,9 @@ Activity Type: ${activityLabel}`,
 
         bucket.title = data.newName
         await bucket.save()
-        shouldRefresh = true; // Renamed
 
         return res.json({
-          reply: `Bucket renamed to "${data.newName}"`,
-          shouldRefresh,
-          activeBoardId: ctx.activeBoardId
+          reply: `Bucket renamed to "${data.newName}"`
         })
       }
 
@@ -945,7 +883,6 @@ Activity Type: ${activityLabel}`,
 
   task.title = normalize(data.newName)
   await task.save()
-  shouldRefresh = true; // Renamed
 
   finalReply = `Task renamed to "${task.title}".`
   responded = true
@@ -963,12 +900,9 @@ return res.json({ reply: ai.reply })
 
           const project = await Board.create({ title: data.title })
           ctx.activeBoardId = project._id
-          shouldRefresh = true; // Created Project
 
           return res.json({
-            reply: `Project "${project.title}" created and set as active`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
+            reply: `Project "${project.title}" created and set as active`
           })
         }
 
@@ -988,12 +922,7 @@ return res.json({ reply: ai.reply })
              return listProjectsAndAsk(res, 'Project not found.')
         }
           ctx.activeBoardId = project._id
-          shouldRefresh = true; // Switched Project (Refresh to show it)
-          return res.json({
-            reply: `Switched to project "${project.title}"`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
-          })
+          return res.json({ reply: `Switched to project "${project.title}"` })
         }
 
         /* ========== ADD BUCKET ========== */
@@ -1015,12 +944,9 @@ return res.json({ reply: ai.reply })
             title: data.title,
             boardId: project._id
           })
-          shouldRefresh = true; // Bucket Added
 
           return res.json({
-            reply: `Bucket "${data.title}" added to project "${project.title}"`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
+            reply: `Bucket "${data.title}" added to project "${project.title}"`
           })
         }
 
@@ -1041,13 +967,8 @@ return res.json({ reply: ai.reply })
               .toUpperCase(),
             avatarColor: 'bg-blue-500'
           });
-          shouldRefresh = true; // Member Added
           responded = true;
-          return res.json({
-            reply: `Member "${data.name}" added successfully.`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
-          });
+          return res.json({ reply: `Member "${data.name}" added successfully.` });
 
         }
 
@@ -1081,7 +1002,6 @@ return res.json({ reply: ai.reply })
           }
 
           await Model.deleteOne({ _id: doc._id })
-          shouldRefresh = true; // Deleted
 
           if (
             data.type === 'project' &&
@@ -1091,11 +1011,7 @@ return res.json({ reply: ai.reply })
           }
 {
           responded = true
-return res.json({
-  reply: ai.reply || `${data.type} deleted.`,
-  shouldRefresh,
-  activeBoardId: ctx.activeBoardId
- })
+return res.json({ reply: ai.reply || `${data.type} deleted.` })
 }
 
         }
@@ -1118,77 +1034,33 @@ return res.json({
 
         /* ========== CONFIRM ========== */
         case 'confirm': {
+          if (!ctx.pendingConfirmation) {
+            return res.json({ reply: 'There is nothing pending to confirm.' })
+          }
 
-          // 1. Pending Delete All
-          if (ctx.pendingConfirmation) {
-            const { action, type } = ctx.pendingConfirmation
-            ctx.pendingConfirmation = null
+          const { action, type } = ctx.pendingConfirmation
+          ctx.pendingConfirmation = null
 
-            if (action === 'delete_all') {
-              if (type === 'project') {
-                await Board.deleteMany({})
-                ctx.activeBoardId = null
-                shouldRefresh = true;
-                return res.json({ reply: 'All projects have been deleted.', shouldRefresh, activeBoardId: null })
-              }
-              if (type === 'member') {
-                await User.deleteMany({})
-                shouldRefresh = true;
-                return res.json({ reply: 'All members have been deleted.', shouldRefresh, activeBoardId: ctx.activeBoardId })
-              }
-              if (type === 'task') {
-                 await Task.deleteMany({})
-                 shouldRefresh = true;
-                 return res.json({ reply: 'All tasks have been deleted.', shouldRefresh, activeBoardId: ctx.activeBoardId })
-              }
+          if (action === 'delete_all') {
+            if (type === 'project') {
+              await Board.deleteMany({})
+              ctx.activeBoardId = null
+              return res.json({ reply: 'All projects have been deleted.' })
+            }
+            if (type === 'member') {
+              await User.deleteMany({})
+              return res.json({ reply: 'All members have been deleted.' })
+            }
+            if (type === 'task') {
+               // Deletes all tasks in active project or globally?
+               // Assuming globally for now based on "delete all".
+               // Or maybe restrict to active project? 
+               // "delete all projects" implies global.
+               await Task.deleteMany({})
+               return res.json({ reply: 'All tasks have been deleted.' })
             }
           }
-
-          // 2. Pending Bucket Creation
-          if (ctx.pendingBucketCreation) {
-             const { bucketName, taskData, projectId } = ctx.pendingBucketCreation
-             ctx.pendingBucketCreation = null
-
-             // Create Bucket
-             const bucket = await Bucket.create({
-                title: bucketName,
-                boardId: projectId
-             })
-
-             // Then Create Task
-             // Re-validate logic similar to add_task
-             // (Simplified here assuming data is valid as it came from add_task)
-             const priorityEnum = enumFromSchema(Task.schema, 'priority');
-             const progressEnum = enumFromSchema(Task.schema, 'progress');
-
-             let assignedIds = [];
-             if (taskData.assignedTo?.length) {
-               const { users } = await resolveUsersByNames(taskData.assignedTo);
-               assignedIds = users;
-             }
-
-             const task = await Task.create({
-                title: normalize(taskData.title),
-                bucketId: bucket._id,
-                description: normalize(taskData.description || ''),
-                assignedTo: assignedIds,
-                labels: taskData.labels || [],
-                priority: priorityEnum.includes(taskData.priority) ? taskData.priority : undefined,
-                progress: progressEnum.includes(taskData.progress) ? taskData.progress : undefined,
-                estimatedDays: taskData.etaDays,
-                activityType: taskData.activityType
-                  ? normalizeActivityType(taskData.activityType)
-                  : undefined
-             })
-
-             shouldRefresh = true;
-             return res.json({
-               reply: `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`,
-               shouldRefresh,
-               activeBoardId: ctx.activeBoardId
-             })
-          }
-
+          
           return res.json({ reply: 'Action confirmed.' })
         }
 
@@ -1197,10 +1069,6 @@ return res.json({
            if (ctx.pendingConfirmation) {
              ctx.pendingConfirmation = null
              return res.json({ reply: 'Action cancelled.' })
-           }
-           if (ctx.pendingBucketCreation) {
-             ctx.pendingBucketCreation = null
-             return res.json({ reply: 'Task creation cancelled.' })
            }
            return res.json({ reply: 'Nothing to cancel.' })
         }
@@ -1212,18 +1080,16 @@ return res.json({
           if (ctx.lastDeleted) {
             await ctx.lastDeleted.model.create(ctx.lastDeleted.data)
             ctx.lastDeleted = null
-            shouldRefresh = true;
-            return res.json({ reply: 'Undo successful: Deleted item restored. ✅', shouldRefresh, activeBoardId: ctx.activeBoardId })
+            return res.json({ reply: 'Undo successful: Deleted item restored. ✅' })
           }
 
           // Priority 2: Undo Rename
           if (ctx.lastRename) {
             const { model, id, oldName } = ctx.lastRename
-
+            
             await model.findByIdAndUpdate(id, { title: oldName })
             ctx.lastRename = null
-            shouldRefresh = true;
-            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅`, shouldRefresh, activeBoardId: ctx.activeBoardId })
+            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅` })
           }
 
           return res.json({ reply: 'Nothing to undo.' })
@@ -1235,9 +1101,9 @@ return res.json({
           const projectList = projects.length > 0
             ? projects.map(p => `• ${p.title}`).join('\n')
             : 'No projects found.'
-
-          return res.json({
-            reply: `Here are your projects:\n${projectList}`
+          
+          return res.json({ 
+            reply: `Here are your projects:\n${projectList}` 
           })
         }
 
@@ -1250,13 +1116,13 @@ return res.json({
 
           const buckets = await Bucket.find({ boardId: project._id })
           ctx.lastResult = buckets
-
+          
           const bucketList = buckets.length > 0
              ? buckets.map(b => `• ${b.title}`).join('\n')
              : 'No buckets found.'
-
-          return res.json({
-            reply: `Here are the buckets in ${project.title}:\n${bucketList}`
+          
+          return res.json({ 
+            reply: `Here are the buckets in ${project.title}:\n${bucketList}` 
           })
         }
 
@@ -1266,7 +1132,7 @@ return res.json({
           const userList = users.length > 0
              ? users.map(u => `• ${u.name}`).join('\n')
              : 'No members found.'
-
+          
           return res.json({
             reply: `Here are the members:\n${userList}`
           })
@@ -1299,7 +1165,7 @@ return res.json({
     const tasks = await Task.find({ bucketId: bucket._id })
     ctx.lastResult = tasks
 
-    const taskList = tasks.length > 0
+    const taskList = tasks.length > 0 
       ? tasks.map(t => `• ${t.title} [${t.priority || '-'}]`).join('\n')
       : 'No tasks found.'
 
@@ -1360,7 +1226,7 @@ return res.json({
         const activity = task.activityType || 'Not Set'
         return `${index + 1}. ${task.title} (${activity})`
       })
-
+    
     return res.json({
       reply: `Here is ${user.name}'s schedule for ${format(day, 'yyyy-MM-dd')}:\n${taskLines.join('\n')}`
     })
@@ -1378,7 +1244,7 @@ return res.json({
     })
 
     ctx.lastResult = tasks
-
+    
     const taskList = tasks.map(t => `• ${t.title}`).join('\n')
     return res.json({ reply: `Tasks for Today:\n${taskList}` })
   }
@@ -1410,9 +1276,7 @@ return res.json({
   if (!responded) {
     console.log('Final fallback response:', finalReply || ai?.reply || 'How can I help you with your project?');
     return res.json({
-      reply: finalReply || ai?.reply || 'How can I help you with your project?',
-      shouldRefresh,
-      activeBoardId: ctx.activeBoardId
+      reply: finalReply || ai?.reply || 'How can I help you with your project?'
     });
   }
 
