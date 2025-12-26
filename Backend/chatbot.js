@@ -19,6 +19,7 @@
   ===================================================== */
   const memory = new Map()
 
+  // Helper to save state for undoing renames
   function saveRenameUndo(ctx, model, id, oldName) {
     ctx.lastRename = {
       model,
@@ -185,12 +186,9 @@ If user refers to a project that does not exist:
 
 6️⃣ UNDO MUST ALWAYS WORK
 - Undo must work for:
-  - delete project
-  - delete bucket
-  - delete task
-  - rename project
-  - rename bucket
-  - rename task
+  - delete project/bucket/task/member
+  - delete ALL projects/buckets/tasks/members
+  - rename project/bucket/task
 - If nothing can be undone, say so clearly.
 - Never ask vague questions like “what do you want to undo”.
 
@@ -257,6 +255,7 @@ show_capabilities
 confirm
 cancel
 undo
+reset_chat
 none
 
 ====================================================
@@ -297,6 +296,8 @@ SPECIAL RULES
 
 • If user asks "what can you do" or "help" → use action: show_capabilities
 • If user asks "what activity types" → use action: show_activity_types
+
+• If user says "revert to greeting" or "reset", use action: reset_chat
 
 • **Single Word Project Selection**:
   If the user provides a single word (e.g., "testing", "gan") and it looks like a project name, especially after being asked to select a project, assume action: set_active_project with data.title = <word>.
@@ -360,6 +361,9 @@ User: ram (answering "Which user?")
 
 User: testing (answering "Which project?")
 → { "actions": [{ "action": "set_active_project", "data": { "title": "testing" } }] }
+
+User: revert to greeting
+→ { "actions": [{ "action": "reset_chat" }] }
 
 ====================================================
 FINAL RULE
@@ -487,6 +491,12 @@ ALWAYS guide forward.
 
       switch (action) {
 
+      /* ========== RESET CHAT ========== */
+      case 'reset_chat': {
+        ctx.history = []
+        return res.json({ reply: 'Hello! I am your Planner AI. How can I help you today? 👋' })
+      }
+
       /* ========== SHOW CAPABILITIES ========== */
       case 'show_capabilities': {
         return res.json({
@@ -496,7 +506,7 @@ ALWAYS guide forward.
 • Add, update, and assign tasks
 • Manage team members
 • Show daily schedules and sprint views
-• Undo recent changes
+• Undo recent changes (including delete all)
 • Answer questions about your project data (e.g., "what is ram doing")
 
 Just ask me naturally! 🚀`
@@ -611,6 +621,17 @@ ${bucketList || 'None'}
 
 Would you like to create "${data.bucket}"?`
           })
+        }
+
+        // 🚫 Check for Duplicate Task
+        const existingTask = await Task.findOne({
+            title: new RegExp(`^${data.title}$`, 'i'),
+            bucketId: bucket._id
+        });
+        if (existingTask) {
+            return res.json({
+                reply: `Task "${data.title}" already exists in bucket "${bucket.title}".`
+            });
         }
 
         // Validate users
@@ -960,6 +981,15 @@ Activity Type: ${activityLabel}`,
 return res.json({ reply: ai.reply })
           }
 
+          // 🚫 Check for Duplicate Project
+          const existingProject = await Board.findOne({
+              title: new RegExp(`^${data.title}$`, 'i')
+          });
+          if (existingProject) {
+              return res.json({
+                  reply: `Project "${existingProject.title}" already exists. Please choose a different name.`
+              });
+          }
 
           const project = await Board.create({ title: data.title })
           ctx.activeBoardId = project._id
@@ -1009,6 +1039,17 @@ return res.json({ reply: ai.reply })
           if (!project) {
             ctx.activeBoardId = null
             return listProjectsAndAsk(res, 'Active project is invalid. Please select a project.')
+          }
+
+          // 🚫 Check for Duplicate Bucket
+          const existingBucket = await Bucket.findOne({
+              title: new RegExp(`^${data.title}$`, 'i'),
+              boardId: project._id
+          });
+          if (existingBucket) {
+              return res.json({
+                  reply: `Bucket "${existingBucket.title}" already exists in project "${project.title}".`
+              });
           }
 
           await Bucket.create({
@@ -1126,20 +1167,32 @@ return res.json({
 
             if (action === 'delete_all') {
               if (type === 'project') {
-                await Board.deleteMany({})
+                const projects = await Board.find({})
+                if (projects.length > 0) {
+                    ctx.lastDeletedAll = { type: 'project', items: projects.map(p => p.toObject()) }
+                    await Board.deleteMany({})
+                }
                 ctx.activeBoardId = null
                 shouldRefresh = true;
-                return res.json({ reply: 'All projects have been deleted.', shouldRefresh, activeBoardId: null })
+                return res.json({ reply: 'All projects have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: null })
               }
               if (type === 'member') {
-                await User.deleteMany({})
+                const users = await User.find({})
+                if (users.length > 0) {
+                    ctx.lastDeletedAll = { type: 'member', items: users.map(u => u.toObject()) }
+                    await User.deleteMany({})
+                }
                 shouldRefresh = true;
-                return res.json({ reply: 'All members have been deleted.', shouldRefresh, activeBoardId: ctx.activeBoardId })
+                return res.json({ reply: 'All members have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: ctx.activeBoardId })
               }
               if (type === 'task') {
-                 await Task.deleteMany({})
+                 const tasks = await Task.find({})
+                 if (tasks.length > 0) {
+                    ctx.lastDeletedAll = { type: 'task', items: tasks.map(t => t.toObject()) }
+                    await Task.deleteMany({})
+                 }
                  shouldRefresh = true;
-                 return res.json({ reply: 'All tasks have been deleted.', shouldRefresh, activeBoardId: ctx.activeBoardId })
+                 return res.json({ reply: 'All tasks have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: ctx.activeBoardId })
               }
             }
           }
@@ -1208,6 +1261,18 @@ return res.json({
 
         /* ========== UNDO ========== */
         case 'undo': {
+          // Priority 0: Undo Delete All
+          if (ctx.lastDeletedAll) {
+             const { type, items } = ctx.lastDeletedAll
+             if (type === 'project') await Board.insertMany(items)
+             if (type === 'member') await User.insertMany(items)
+             if (type === 'task') await Task.insertMany(items)
+
+             ctx.lastDeletedAll = null
+             shouldRefresh = true
+             return res.json({ reply: `Undo successful: All ${type}s restored. ✅`, shouldRefresh, activeBoardId: ctx.activeBoardId })
+          }
+
           // Priority 1: Undo Delete
           if (ctx.lastDeleted) {
             await ctx.lastDeleted.model.create(ctx.lastDeleted.data)
