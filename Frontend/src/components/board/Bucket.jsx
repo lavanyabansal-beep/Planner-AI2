@@ -93,6 +93,7 @@ const Bucket = ({ bucket, tasks, users = [], onAddTask, onDeleteBucket, onUpdate
     <div
       ref={setNodeRef}
       style={style}
+      data-tour={bucket.order === 0 ? 'workflow-bucket' : undefined}
       className="flex-shrink-0 w-80 bg-gray-800/80 backdrop-blur-sm rounded-2xl border border-gray-700 shadow-elevated flex flex-col max-h-full transition-all hover:shadow-2xl hover:border-gray-600"
     >
       {/* Header */}

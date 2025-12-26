@@ -32,6 +32,7 @@ const AddBucketButton = ({ onAdd }) => {
     return (
       <button
         onClick={() => setIsAdding(true)}
+        data-tour="add-bucket-btn"
         className="flex-shrink-0 w-80 h-full min-h-[200px] bg-gray-800/40 hover:bg-gray-800/60 border-2 border-dashed border-gray-700 hover:border-primary-500 rounded-2xl flex items-center justify-center text-gray-500 hover:text-primary-400 transition-all duration-200 group backdrop-blur-sm"
       >
         <div className="flex items-center gap-2">

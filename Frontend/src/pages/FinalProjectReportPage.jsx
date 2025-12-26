@@ -86,7 +86,8 @@ const FinalProjectReportPage = () => {
             </div>
             <div className="flex items-center gap-2">
               <Button 
-                onClick={loadReport} 
+                data-tour="final-report-refresh"
+                onClick={loadReport}
                 variant="secondary" 
                 size="sm"
                 icon={
