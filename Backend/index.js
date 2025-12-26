@@ -10,6 +10,7 @@ const Team = require('./models/Team')
 const Board = require('./models/Board')
 const Bucket = require('./models/Bucket')
 const Task = require('./models/Task')
+
 const { scheduleSprintViewTasks, expandRecurringTask, validateTasks, ACTIVITY_TYPES } = require('./utils/sprintviewScheduler')
 const { expandToUserDayView, expandToFlatGrid } = require('./utils/userDayExpander')
 const { scheduleForFinalReport } = require('./utils/finalReportScheduler')
@@ -20,6 +21,9 @@ app.use(express.json())
 
 // connect to Mongo
 connectDB()
+
+const chatbotRouter = require('./chatbot')
+app.use('/api/chat', chatbotRouter)
 
 // --- Users & Labels (labels kept static for now) ---
 app.get('/api/users', async (req, res) => {

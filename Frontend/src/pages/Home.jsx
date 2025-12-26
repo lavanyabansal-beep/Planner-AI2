@@ -11,6 +11,8 @@ import Spinner from '../components/common/Spinner';
 import Input from '../components/common/Input';
 import Modal from '../components/common/Modal';
 import useBoard from '../hooks/useBoard';
+import Chatbot from '../components/chatbot';
+
 
 const Home = () => {
   const [boards, setBoards] = useState([]);
@@ -144,6 +146,17 @@ const Home = () => {
 
   const handleMemberAdded = () => {
     refetch();
+  };
+
+  const handleChatbotAction = (actionData) => {
+    if (actionData.shouldRefresh) {
+      refetch();
+      // Also refresh boards list in case a project was added/deleted/renamed
+      boardsAPI.getAll().then(setBoards).catch(console.error);
+    }
+    if (actionData.activeBoardId && actionData.activeBoardId !== selectedBoardId) {
+      setSelectedBoardId(actionData.activeBoardId);
+    }
   };
 
   if (loadingBoards) {
@@ -519,7 +532,10 @@ const Home = () => {
           </div>
         </div>
       </Modal>
+      <Chatbot activeProjectId={selectedBoardId} onAction={handleChatbotAction} />
+
     </div>
+    
   );
 };
 
