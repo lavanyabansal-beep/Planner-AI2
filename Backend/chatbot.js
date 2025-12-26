@@ -19,6 +19,7 @@
   ===================================================== */
   const memory = new Map()
 
+  // Helper to save state for undoing renames
   function saveRenameUndo(ctx, model, id, oldName) {
     ctx.lastRename = {
       model,
@@ -67,7 +68,7 @@ const allowedActivityTypes = [
   'RECURRING_WEEKLY',
   'BUFFER',
   'PARALLEL_ALLOWED',
-  
+  'MILESTONE'
 ]
 
 // Normalize user input → DB value
@@ -91,7 +92,9 @@ function normalizeActivityType(input) {
     'buffer': 'BUFFER',
 
     'parallel allowed': 'PARALLEL_ALLOWED',
-    'parallel': 'PARALLEL_ALLOWED'
+    'parallel': 'PARALLEL_ALLOWED',
+
+    'milestone': 'MILESTONE'
   }
 
   return map[value] || null
@@ -154,8 +157,8 @@ CRITICAL BEHAVIOR RULES (NON-NEGOTIABLE)
 
 2️⃣ CONTEXT AWARENESS
 - Remember previous turns.
-- If you ask a question and the user answers it, CONTINUE the action.
-- Never forget what you were trying to do.
+- If the assistant just asked "Which project?", and the user says "testing", interpret it as "set active project to testing".
+- If the assistant just asked "Create bucket X?", and the user says "yes", interpret it as "confirm".
 
 3️⃣ ACTIVE PROJECT HANDLING (AUTOMATIC)
 - NEVER ask the user to repeatedly "set active project".
@@ -185,12 +188,9 @@ If user refers to a project that does not exist:
 
 6️⃣ UNDO MUST ALWAYS WORK
 - Undo must work for:
-  - delete project
-  - delete bucket
-  - delete task
-  - rename project
-  - rename bucket
-  - rename task
+  - delete project/bucket/task/member
+  - delete ALL projects/buckets/tasks/members
+  - rename project/bucket/task
 - If nothing can be undone, say so clearly.
 - Never ask vague questions like “what do you want to undo”.
 
@@ -253,9 +253,13 @@ show_today
 show_tomorrow
 show_sprint_view
 show_activity_types
+show_allowed_values
+show_capabilities
+greet
 confirm
 cancel
 undo
+reset_chat
 none
 
 ====================================================
@@ -263,36 +267,43 @@ REQUIRED FIELD EXTRACTION
 ====================================================
 
 • create_project → data.title
-• add_bucket → data.title
+• add_bucket → data.title AND data.project (if specified)
 • add_task → data.title AND data.bucket
 • rename_* → data.oldName AND data.newName
 • delete → data.type AND data.name
 • delete_all → data.type (projects, members, tasks)
 • add_member → data.name
 • update_task → data.title (and fields being updated)
+• show_allowed_values → data.field (priority, progress, activityType)
 
 ====================================================
 SPECIAL RULES
 ====================================================
 
-• “progress” ≠ “activity type”
-• Progress values only:
-  - not started
-  - in progress
-  - completed
+• **PRIORITY vs PROGRESS**:
+  - **Priority** values are ONLY: urgent, important, medium, low
+  - **Progress** values are ONLY: not started, in progress, completed
+  - **Activity Types** are ONLY: One-Time, Continuous, API/1-Day, Recurring Weekly, Buffer, Parallel Allowed, Milestone
 
-• Activity types only:
-  - One-Time
-  - Continuous
-  - API/1-Day
-  - Recurring Weekly
-  - Buffer
-  - Parallel Allowed
+• If user says "set priority to not started", CORRECT them to "progress".
+• If user says "set progress to urgent", CORRECT them to "priority".
+
+• If user asks "what values can I set for X", use action: show_allowed_values with data.field = X.
 
 • If user says "undo" → ALWAYS use action: undo
 
 • If user says "yes" or "confirm" (after a confirmation request) → use action: confirm
 • If user says "no" or "cancel" → use action: cancel
+
+• If user asks "what can you do" or "help" → use action: show_capabilities
+• If user asks "what activity types" → use action: show_activity_types
+
+• If user says "hello", "hi", "hey" → use action: greet
+
+• If user says "revert to greeting" or "reset", use action: reset_chat
+
+• **Single Word Project Selection**:
+  If the user provides a single word (e.g., "testing", "gan") and it looks like a project name, especially after being asked to select a project, assume action: set_active_project with data.title = <word>.
 
 • If information is missing:
   - Use action: none
@@ -314,11 +325,10 @@ EXAMPLES
 ====================================================
 
 User: add bucket git to github
-→ github does not exist
+→ { "actions": [{ "action": "add_bucket", "data": { "title": "git", "project": "github" } }] }
 
-Reply:
-"Project 'github' does not exist.
-Would you like me to create it or use an existing project?"
+User: github does not exist
+Reply: "Project 'github' does not exist..."
 
 User: yes
 → create project github
@@ -336,8 +346,11 @@ User: delete all projects
 User: yes (answering confirmation)
 → { "actions": [{ "action": "confirm" }] }
 
-User: what all activity type do you have
-→ { "actions": [{ "action": "show_activity_types" }] }
+User: what values for priority
+→ { "actions": [{ "action": "show_allowed_values", "data": { "field": "priority" } }] }
+
+User: what can i set progress to
+→ { "actions": [{ "action": "show_allowed_values", "data": { "field": "progress" } }] }
 
 User: assign generative to ram
 → { "actions": [{ "action": "update_task", "data": { "title": "generative", "assignedTo": ["ram"] } }] }
@@ -347,6 +360,18 @@ User: what work is assigned to ram
 
 User: ram (answering "Which user?")
 → { "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }] }
+
+User: testing (answering "Which project?")
+→ { "actions": [{ "action": "set_active_project", "data": { "title": "testing" } }] }
+
+User: revert to greeting
+→ { "actions": [{ "action": "reset_chat" }] }
+
+User: hello
+→ { "actions": [{ "action": "greet" }] }
+
+User: Would you like to create "dbbase"? (Bot) -> yes (User)
+→ { "actions": [{ "action": "confirm" }] }
 
 ====================================================
 FINAL RULE
@@ -414,7 +439,7 @@ ALWAYS guide forward.
 
 
     const ctx = getCtx(req)
-
+    let shouldRefresh = false // Track if state changed
 
     // frontend-controlled active project
     if (req.body.activeProjectId) {
@@ -429,6 +454,7 @@ ALWAYS guide forward.
       if (count === 1) {
         const onlyProject = await Board.findOne()
         ctx.activeBoardId = onlyProject._id
+        shouldRefresh = true // Maybe refreshed selection
       }
     }
 
@@ -460,15 +486,70 @@ ALWAYS guide forward.
         const action = step.action || 'none'
         const data = step.data || {}
 
-      // 🔁 auto switch project
+      // 🔁 auto switch project (VALIDATED)
       if (data.project) {
         const project = await Board.findOne({
           title: new RegExp(`^${data.project}$`, 'i')
         })
-        if (project) ctx.activeBoardId = project._id
+        if (project) {
+            ctx.activeBoardId = project._id
+            shouldRefresh = true
+        } else {
+            // 🔥 Project NOT FOUND
+            responded = true;
+            
+            // Store pending state for creation
+            ctx.pendingProjectCreation = {
+              title: data.project,
+              nextAction: step
+            }
+
+            const projects = await Board.find().sort({ createdAt: -1 })
+            const projectList = projects.length > 0 
+              ? projects.map(p => `• ${p.title}`).join('\n')
+              : 'None'
+
+            return res.json({
+              reply: `Project "${data.project}" does not exist.\n\nAvailable projects:\n${projectList}\n\nWould you like to create "${data.project}"?`
+            })
+        }
       }
 
       switch (action) {
+
+      /* ========== GREET ========== */
+      case 'greet': {
+        const greetings = [
+          'Hello! 👋 How can I help you manage your projects today?',
+          'Hi there! 🚀 Ready to organize some tasks?',
+          'Hey! What can I do for you?',
+          'Greetings! 🤖 I am at your service.'
+        ]
+        const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)]
+        return res.json({ reply: randomGreeting })
+      }
+
+      /* ========== RESET CHAT ========== */
+      case 'reset_chat': {
+        ctx.history = []
+        return res.json({ reply: 'Hello! I am your Planner AI. How can I help you today? 👋' })
+      }
+
+      /* ========== SHOW CAPABILITIES ========== */
+      case 'show_capabilities': {
+        return res.json({
+          reply: `I can help you with the following:
+• Create and manage projects (boards)
+• Add, rename, and delete buckets (lists)
+• Add, update, and assign tasks
+• Manage team members
+• Show daily schedules and sprint views
+• Undo recent changes (including delete all)
+• Answer questions about your project data (e.g., "what is ram doing")
+
+Just ask me naturally! 🚀`
+        })
+      }
 
       /* ========== SHOW ACTIVITY TYPES ========== */
       case 'show_activity_types': {
@@ -476,6 +557,31 @@ ALWAYS guide forward.
         return res.json({
           reply: `Here are the available activity types:\n${list}`
         })
+      }
+
+      /* ========== SHOW ALLOWED VALUES ========== */
+      case 'show_allowed_values': {
+        const field = data.field ? data.field.toLowerCase() : null;
+        let values = [];
+        let name = '';
+
+        if (field === 'priority') {
+            values = enumFromSchema(Task.schema, 'priority');
+            name = 'Priority';
+        } else if (field === 'progress') {
+            values = enumFromSchema(Task.schema, 'progress');
+            name = 'Progress';
+        } else if (field === 'activitytype' || field === 'activity type') {
+            values = allowedActivityTypes;
+            name = 'Activity Type';
+        } else {
+            return res.json({ reply: 'I can show allowed values for: Priority, Progress, and Activity Type.' });
+        }
+
+        const list = values.map(v => `• ${v.replace(/_/g, ' ')}`).join('\n');
+        return res.json({
+            reply: `Here are the allowed values for ${name}:\n${list}`
+        });
       }
 
 
@@ -558,8 +664,40 @@ ALWAYS guide forward.
           title: new RegExp(`^${data.bucket}$`, 'i'),
           boardId: project._id
         });
-        if (!bucket)
-          return res.json({ reply: 'Bucket not found in the active project.' });
+        
+        // 🚀 Auto-prompt to create bucket if missing
+        if (!bucket) {
+          ctx.pendingBucketCreation = {
+            bucketName: data.bucket,
+            taskData: data,
+            projectId: project._id
+          }
+          
+          const existingBuckets = await Bucket.find({ boardId: project._id })
+          const bucketList = existingBuckets.length > 0 
+            ? existingBuckets.map(b => `• ${b.title}`).join('\n')
+            : 'No buckets found.'
+
+          return res.json({
+            reply: `Bucket "${data.bucket}" does not exist in project "${project.title}".
+            
+Available buckets:
+${bucketList}
+
+Would you like to create "${data.bucket}"?`
+          })
+        }
+
+        // 🚫 Check for Duplicate Task
+        const existingTask = await Task.findOne({ 
+            title: new RegExp(`^${data.title}$`, 'i'), 
+            bucketId: bucket._id 
+        });
+        if (existingTask) {
+            return res.json({
+                reply: `Task "${data.title}" already exists in bucket "${bucket.title}".`
+            });
+        }
 
         // Validate users
         let assignedIds = [];
@@ -614,8 +752,11 @@ ALWAYS guide forward.
       taskData.activityType = normalizedActivity
       }
       const task = await Task.create(taskData);
+      shouldRefresh = true; // Task Created
       return res.json({
-      reply: `Task "${task.title}" created in bucket "${bucket.title}".`
+      reply: `Task "${task.title}" created in bucket "${bucket.title}".`,
+      shouldRefresh,
+      activeBoardId: ctx.activeBoardId
       });
             }
 
@@ -649,7 +790,17 @@ Try: "set progress to ${data.activityType} in ${data.title}".`
   })
 
   if (!task) {
-    return res.json({ reply: 'Task not found in this project.' })
+    // 💡 Check if user named a Project or Bucket instead
+    const isProject = await Board.findOne({ title: new RegExp(`^${data.title}$`, 'i') })
+    if (isProject) {
+        return res.json({ reply: `"${isProject.title}" is a project. I can only update priority/progress for tasks.` })
+    }
+    const isBucket = await Bucket.findOne({ title: new RegExp(`^${data.title}$`, 'i'), boardId: project._id })
+    if (isBucket) {
+        return res.json({ reply: `"${isBucket.title}" is a bucket. I can only update priority/progress for tasks.` })
+    }
+
+    return res.json({ reply: `Task "${data.title}" not found in this project.` })
   }
 
   // ===== Priority =====
@@ -725,7 +876,8 @@ Allowed values are:
 • API/1-Day
 • Recurring Weekly
 • Buffer
-• Parallel Allowed`
+• Parallel Allowed
+• Milestone`
     })
   }
 
@@ -759,6 +911,7 @@ Allowed values are:
   }
 
   await task.save()
+  shouldRefresh = true; // Task Updated
 
   console.log('✅ TASK UPDATED:', {
     id: task._id,
@@ -774,7 +927,8 @@ Allowed values are:
   API_1_DAY: 'API/1-Day',
   RECURRING_WEEKLY: 'Recurring Weekly',
   BUFFER: 'Buffer',
-  PARALLEL_ALLOWED: 'Parallel Allowed'
+  PARALLEL_ALLOWED: 'Parallel Allowed',
+  MILESTONE: 'Milestone'
 }
 
 const activityLabel = task.activityType
@@ -785,7 +939,9 @@ return res.json({
   reply: `Task "${task.title}" updated successfully.
 Priority: ${task.priority || 'unchanged'}
 Progress: ${task.progress || 'unchanged'}
-Activity Type: ${activityLabel}`
+Activity Type: ${activityLabel}`,
+  shouldRefresh,
+  activeBoardId: ctx.activeBoardId
 })
 
 }
@@ -794,18 +950,31 @@ Activity Type: ${activityLabel}`
 
       /* ========== RENAME PROJECT ========== */
       case 'rename_project': {
-        if (!data.oldName || !data.newName) break
+        if (!data.oldName || !data.newName) {
+            finalReply = "Please provide the old and new project names.";
+            break;
+        }
 
         const project = await Board.findOne({
           title: new RegExp(`^${data.oldName}$`, 'i')
         })
-        if (!project) break
+        
+        if (!project) {
+            finalReply = `Project "${data.oldName}" not found.`;
+            break;
+        }
 
         saveRenameUndo(ctx, Board, project._id, project.title)
 
         project.title = data.newName
         await project.save()
-        break
+        shouldRefresh = true; // Renamed
+        
+        return res.json({
+            reply: `Project renamed to "${data.newName}".`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
+        });
       }
 
 
@@ -834,9 +1003,12 @@ Activity Type: ${activityLabel}`
 
         bucket.title = data.newName
         await bucket.save()
+        shouldRefresh = true; // Renamed
 
         return res.json({
-          reply: `Bucket renamed to "${data.newName}"`
+          reply: `Bucket renamed to "${data.newName}"`,
+          shouldRefresh,
+          activeBoardId: ctx.activeBoardId
         })
       }
 
@@ -846,7 +1018,6 @@ Activity Type: ${activityLabel}`
       case 'rename_task': {
   if (!data.oldName || !data.newName) {
     finalReply = 'Please provide old and new task names.'
-    responded = true
     break
   }
 
@@ -864,7 +1035,6 @@ Activity Type: ${activityLabel}`
 
   if (!bucket) {
     finalReply = 'Bucket not found.'
-    responded = true
     break
   }
 
@@ -875,7 +1045,6 @@ Activity Type: ${activityLabel}`
 
   if (!task) {
     finalReply = `Task "${data.oldName}" not found in "${bucket.title}".`
-    responded = true
     break
   }
 
@@ -883,10 +1052,13 @@ Activity Type: ${activityLabel}`
 
   task.title = normalize(data.newName)
   await task.save()
+  shouldRefresh = true; // Renamed
 
-  finalReply = `Task renamed to "${task.title}".`
-  responded = true
-  break
+  return res.json({
+    reply: `Task renamed to "${task.title}".`,
+    shouldRefresh,
+    activeBoardId: ctx.activeBoardId
+  })
 }
 
 
@@ -897,12 +1069,24 @@ Activity Type: ${activityLabel}`
 return res.json({ reply: ai.reply })
           }
 
+          // 🚫 Check for Duplicate Project
+          const existingProject = await Board.findOne({ 
+              title: new RegExp(`^${data.title}$`, 'i') 
+          });
+          if (existingProject) {
+              return res.json({
+                  reply: `Project "${existingProject.title}" already exists. Please choose a different name.`
+              });
+          }
 
           const project = await Board.create({ title: data.title })
           ctx.activeBoardId = project._id
+          shouldRefresh = true; // Created Project
 
           return res.json({
-            reply: `Project "${project.title}" created and set as active`
+            reply: `Project "${project.title}" created and set as active`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
           })
         }
 
@@ -922,7 +1106,12 @@ return res.json({ reply: ai.reply })
              return listProjectsAndAsk(res, 'Project not found.')
         }
           ctx.activeBoardId = project._id
-          return res.json({ reply: `Switched to project "${project.title}"` })
+          shouldRefresh = true; // Switched Project (Refresh to show it)
+          return res.json({ 
+            reply: `Switched to project "${project.title}"`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
+          })
         }
 
         /* ========== ADD BUCKET ========== */
@@ -940,13 +1129,27 @@ return res.json({ reply: ai.reply })
             return listProjectsAndAsk(res, 'Active project is invalid. Please select a project.')
           }
 
+          // 🚫 Check for Duplicate Bucket
+          const existingBucket = await Bucket.findOne({ 
+              title: new RegExp(`^${data.title}$`, 'i'), 
+              boardId: project._id 
+          });
+          if (existingBucket) {
+              return res.json({
+                  reply: `Bucket "${existingBucket.title}" already exists in project "${project.title}".`
+              });
+          }
+
           await Bucket.create({
             title: data.title,
             boardId: project._id
           })
+          shouldRefresh = true; // Bucket Added
 
           return res.json({
-            reply: `Bucket "${data.title}" added to project "${project.title}"`
+            reply: `Bucket "${data.title}" added to project "${project.title}"`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
           })
         }
 
@@ -967,8 +1170,13 @@ return res.json({ reply: ai.reply })
               .toUpperCase(),
             avatarColor: 'bg-blue-500'
           });
+          shouldRefresh = true; // Member Added
           responded = true;
-          return res.json({ reply: `Member "${data.name}" added successfully.` });
+          return res.json({ 
+            reply: `Member "${data.name}" added successfully.`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
+          });
 
         }
 
@@ -1002,6 +1210,7 @@ return res.json({ reply: ai.reply })
           }
 
           await Model.deleteOne({ _id: doc._id })
+          shouldRefresh = true; // Deleted
 
           if (
             data.type === 'project' &&
@@ -1011,7 +1220,11 @@ return res.json({ reply: ai.reply })
           }
 {
           responded = true
-return res.json({ reply: ai.reply || `${data.type} deleted.` })
+return res.json({ 
+  reply: ai.reply || `${data.type} deleted.`,
+  shouldRefresh,
+  activeBoardId: ctx.activeBoardId
+ })
 }
 
         }
@@ -1034,31 +1247,117 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
 
         /* ========== CONFIRM ========== */
         case 'confirm': {
-          if (!ctx.pendingConfirmation) {
-            return res.json({ reply: 'There is nothing pending to confirm.' })
+          
+          // 1. Pending Delete All
+          if (ctx.pendingConfirmation) {
+            const { action, type } = ctx.pendingConfirmation
+            ctx.pendingConfirmation = null
+
+            if (action === 'delete_all') {
+              if (type === 'project') {
+                const projects = await Board.find({})
+                if (projects.length > 0) {
+                    ctx.lastDeletedAll = { type: 'project', items: projects.map(p => p.toObject()) }
+                    await Board.deleteMany({})
+                }
+                ctx.activeBoardId = null
+                shouldRefresh = true;
+                return res.json({ reply: 'All projects have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: null })
+              }
+              if (type === 'member') {
+                const users = await User.find({})
+                if (users.length > 0) {
+                    ctx.lastDeletedAll = { type: 'member', items: users.map(u => u.toObject()) }
+                    await User.deleteMany({})
+                }
+                shouldRefresh = true;
+                return res.json({ reply: 'All members have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: ctx.activeBoardId })
+              }
+              if (type === 'task') {
+                 const tasks = await Task.find({})
+                 if (tasks.length > 0) {
+                    ctx.lastDeletedAll = { type: 'task', items: tasks.map(t => t.toObject()) }
+                    await Task.deleteMany({})
+                 }
+                 shouldRefresh = true;
+                 return res.json({ reply: 'All tasks have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: ctx.activeBoardId })
+              }
+            }
+          }
+          
+          // 2. Pending Bucket Creation
+          if (ctx.pendingBucketCreation) {
+             const { bucketName, taskData, projectId } = ctx.pendingBucketCreation
+             ctx.pendingBucketCreation = null
+             
+             // Create Bucket
+             const bucket = await Bucket.create({
+                title: bucketName,
+                boardId: projectId
+             })
+             
+             // Then Create Task
+             // Re-validate logic similar to add_task
+             // (Simplified here assuming data is valid as it came from add_task)
+             const priorityEnum = enumFromSchema(Task.schema, 'priority');
+             const progressEnum = enumFromSchema(Task.schema, 'progress');
+             
+             let assignedIds = [];
+             if (taskData.assignedTo?.length) {
+               const { users } = await resolveUsersByNames(taskData.assignedTo);
+               assignedIds = users;
+             }
+             
+             const task = await Task.create({
+                title: normalize(taskData.title),
+                bucketId: bucket._id,
+                description: normalize(taskData.description || ''),
+                assignedTo: assignedIds,
+                labels: taskData.labels || [],
+                priority: priorityEnum.includes(taskData.priority) ? taskData.priority : undefined,
+                progress: progressEnum.includes(taskData.progress) ? taskData.progress : undefined,
+                estimatedDays: taskData.etaDays,
+                activityType: taskData.activityType 
+                  ? normalizeActivityType(taskData.activityType) 
+                  : undefined
+             })
+             
+             shouldRefresh = true;
+             return res.json({
+               reply: `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`,
+               shouldRefresh,
+               activeBoardId: ctx.activeBoardId
+             })
           }
 
-          const { action, type } = ctx.pendingConfirmation
-          ctx.pendingConfirmation = null
-
-          if (action === 'delete_all') {
-            if (type === 'project') {
-              await Board.deleteMany({})
-              ctx.activeBoardId = null
-              return res.json({ reply: 'All projects have been deleted.' })
-            }
-            if (type === 'member') {
-              await User.deleteMany({})
-              return res.json({ reply: 'All members have been deleted.' })
-            }
-            if (type === 'task') {
-               // Deletes all tasks in active project or globally?
-               // Assuming globally for now based on "delete all".
-               // Or maybe restrict to active project? 
-               // "delete all projects" implies global.
-               await Task.deleteMany({})
-               return res.json({ reply: 'All tasks have been deleted.' })
-            }
+          // 3. Pending Project Creation
+          if (ctx.pendingProjectCreation) {
+             const { title, nextAction } = ctx.pendingProjectCreation
+             ctx.pendingProjectCreation = null
+             
+             // Create Project
+             const project = await Board.create({ title })
+             ctx.activeBoardId = project._id
+             shouldRefresh = true;
+             
+             // Execute next action (add_bucket)
+             if (nextAction && nextAction.action === 'add_bucket') {
+                 await Bucket.create({
+                    title: nextAction.data.title,
+                    boardId: project._id
+                 })
+                 return res.json({
+                    reply: `Project "${project.title}" created and Bucket "${nextAction.data.title}" added. ✅`,
+                    shouldRefresh,
+                    activeBoardId: ctx.activeBoardId
+                 })
+             }
+             
+             return res.json({
+               reply: `Project "${project.title}" created and set as active. ✅`,
+               shouldRefresh,
+               activeBoardId: ctx.activeBoardId
+             })
           }
           
           return res.json({ reply: 'Action confirmed.' })
@@ -1070,17 +1369,38 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
              ctx.pendingConfirmation = null
              return res.json({ reply: 'Action cancelled.' })
            }
+           if (ctx.pendingBucketCreation) {
+             ctx.pendingBucketCreation = null
+             return res.json({ reply: 'Task creation cancelled.' })
+           }
+           if (ctx.pendingProjectCreation) {
+             ctx.pendingProjectCreation = null
+             return res.json({ reply: 'Project creation cancelled.' })
+           }
            return res.json({ reply: 'Nothing to cancel.' })
         }
 
 
         /* ========== UNDO ========== */
         case 'undo': {
+          // Priority 0: Undo Delete All
+          if (ctx.lastDeletedAll) {
+             const { type, items } = ctx.lastDeletedAll
+             if (type === 'project') await Board.insertMany(items)
+             if (type === 'member') await User.insertMany(items)
+             if (type === 'task') await Task.insertMany(items)
+             
+             ctx.lastDeletedAll = null
+             shouldRefresh = true
+             return res.json({ reply: `Undo successful: All ${type}s restored. ✅`, shouldRefresh, activeBoardId: ctx.activeBoardId })
+          }
+
           // Priority 1: Undo Delete
           if (ctx.lastDeleted) {
             await ctx.lastDeleted.model.create(ctx.lastDeleted.data)
             ctx.lastDeleted = null
-            return res.json({ reply: 'Undo successful: Deleted item restored. ✅' })
+            shouldRefresh = true;
+            return res.json({ reply: 'Undo successful: Deleted item restored. ✅', shouldRefresh, activeBoardId: ctx.activeBoardId })
           }
 
           // Priority 2: Undo Rename
@@ -1089,7 +1409,8 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
             
             await model.findByIdAndUpdate(id, { title: oldName })
             ctx.lastRename = null
-            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅` })
+            shouldRefresh = true;
+            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅`, shouldRefresh, activeBoardId: ctx.activeBoardId })
           }
 
           return res.json({ reply: 'Nothing to undo.' })
@@ -1276,7 +1597,9 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
   if (!responded) {
     console.log('Final fallback response:', finalReply || ai?.reply || 'How can I help you with your project?');
     return res.json({
-      reply: finalReply || ai?.reply || 'How can I help you with your project?'
+      reply: finalReply || ai?.reply || 'How can I help you with your project?',
+      shouldRefresh,
+      activeBoardId: ctx.activeBoardId
     });
   }
 

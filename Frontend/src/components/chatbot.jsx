@@ -49,7 +49,7 @@
         try {
         const data = await sendMessage(msg, activeProjectId)
         setMessages(prev => [...prev, { role: 'bot', text: data.reply || 'No response' }])
-
+        
         if (onAction && data) {
             onAction(data)
         }
