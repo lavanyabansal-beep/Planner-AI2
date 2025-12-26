@@ -12,6 +12,7 @@ const Textarea = ({
   error,
   ariaLabel,
   maxLength,
+  ...props
 }) => {
   const textareaId = id || name;
   
@@ -36,6 +37,7 @@ const Textarea = ({
         aria-label={ariaLabel || label}
         aria-invalid={error ? 'true' : 'false'}
         aria-describedby={error ? `${textareaId}-error` : undefined}
+        {...props}
         className={`form-input resize-none ${error ? 'border-danger-500 focus:ring-danger-500' : ''} ${className}`}
       />
       {maxLength && (

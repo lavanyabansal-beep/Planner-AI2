@@ -112,6 +112,7 @@ const TaskCard = ({ task, users = [], onClick, onToggleComplete }) => {
       {...attributes}
       {...listeners}
       onClick={handleCardClick}
+      data-tour="task-card"
       role="button"
       tabIndex={0}
       aria-label={`Task: ${task.title}`}

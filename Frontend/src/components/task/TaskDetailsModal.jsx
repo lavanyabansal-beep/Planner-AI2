@@ -164,6 +164,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
         {/* Title */}
         <div>
           <Input
+            data-tour="task-title"
             label="Task Name"
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -176,6 +177,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
         {/* Description */}
         <div>
           <Textarea
+            data-tour="task-description"
             label="Description"
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -191,6 +193,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
           <label className="form-label">Assigned To</label>
           <div className="flex items-center gap-3">
             <MemberPicker
+              data-tour="task-assignedto"
               users={users}
               selectedUsers={formData.assignedTo}
               onChange={(selected) => setFormData({ ...formData, assignedTo: selected })}
@@ -249,6 +252,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
               <label htmlFor="activityType" className="form-label">Activity Type</label>
               <select
                 id="activityType"
+                data-tour="task-activity-type"
                 value={formData.activityType}
                 onChange={(e) => {
                   setFormData({ ...formData, activityType: e.target.value });
@@ -272,6 +276,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
               <label htmlFor="estimatedDays" className="form-label">Tentative ETA (Days)</label>
               <input
                 id="estimatedDays"
+                data-tour="task-estimated-days"
                 type="number"
                 min="0"
                 step="0.5"
@@ -297,6 +302,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
         {/* Dates */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
+            data-tour="task-start-date"
             type="date"
             label="Start Date"
             value={formData.startDate}
@@ -304,6 +310,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
             className="bg-gray-900 border-gray-600 text-white"
           />
           <Input
+            data-tour="task-due-date"
             type="date"
             label="Due Date"
             value={formData.dueDate}
@@ -345,6 +352,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
             )}
             <form onSubmit={handleAddChecklistItem} className="flex gap-2">
               <Input
+                data-tour="task-checklist"
                 value={newChecklistItem}
                 onChange={(e) => setNewChecklistItem(e.target.value)}
                 placeholder="Add checklist item"
@@ -442,7 +450,7 @@ const TaskDetailsModal = ({ isOpen, onClose, task, users, onUpdate, onDelete }) 
             <Button onClick={onClose} variant="secondary" fullWidth className="sm:w-auto flex-1 sm:flex-initial">
               Cancel
             </Button>
-            <Button onClick={handleSave} variant="primary" fullWidth className="sm:w-auto flex-1 sm:flex-initial">
+            <Button data-tour="task-save" onClick={handleSave} variant="primary" fullWidth className="sm:w-auto flex-1 sm:flex-initial">
               Save Changes
             </Button>
           </div>

@@ -135,6 +135,7 @@ const SprintViewModal = ({ boardId, boardName, isOpen, onClose, selectedMemberId
                 Task View
               </button>
               <button
+                data-tour="user-day-view-btn"
                 onClick={() => setViewMode('user-day')}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   viewMode === 'user-day'
@@ -157,10 +158,10 @@ const SprintViewModal = ({ boardId, boardName, isOpen, onClose, selectedMemberId
             </label>
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={handleExportCSV}>
+            <Button data-tour="sprintview-export-csv" variant="secondary" size="sm" onClick={handleExportCSV}>
               📥 Export CSV
             </Button>
-            <Button size="sm" onClick={loadSprintViewData}>
+            <Button data-tour="sprintview-refresh" size="sm" onClick={loadSprintViewData}>
               🔄 Refresh
             </Button>
           </div>
