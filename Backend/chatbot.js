@@ -495,9 +495,23 @@ ALWAYS guide forward.
             ctx.activeBoardId = project._id
             shouldRefresh = true
         } else {
-            // 🔥 Project NOT FOUND - Validate and Stop
+            // 🔥 Project NOT FOUND
             responded = true;
-            return listProjectsAndAsk(res, `Project "${data.project}" does not exist.`)
+
+            // Store pending state for creation
+            ctx.pendingProjectCreation = {
+              title: data.project,
+              nextAction: step
+            }
+
+            const projects = await Board.find().sort({ createdAt: -1 })
+            const projectList = projects.length > 0
+              ? projects.map(p => `• ${p.title}`).join('\n')
+              : 'None'
+
+            return res.json({
+              reply: `Project "${data.project}" does not exist.\n\nAvailable projects:\n${projectList}\n\nWould you like to create "${data.project}"?`
+            })
         }
       }
 
@@ -1268,6 +1282,36 @@ return res.json({
              })
           }
 
+          // 3. Pending Project Creation
+          if (ctx.pendingProjectCreation) {
+             const { title, nextAction } = ctx.pendingProjectCreation
+             ctx.pendingProjectCreation = null
+
+             // Create Project
+             const project = await Board.create({ title })
+             ctx.activeBoardId = project._id
+             shouldRefresh = true;
+
+             // Execute next action (add_bucket)
+             if (nextAction && nextAction.action === 'add_bucket') {
+                 await Bucket.create({
+                    title: nextAction.data.title,
+                    boardId: project._id
+                 })
+                 return res.json({
+                    reply: `Project "${project.title}" created and Bucket "${nextAction.data.title}" added. ✅`,
+                    shouldRefresh,
+                    activeBoardId: ctx.activeBoardId
+                 })
+             }
+
+             return res.json({
+               reply: `Project "${project.title}" created and set as active. ✅`,
+               shouldRefresh,
+               activeBoardId: ctx.activeBoardId
+             })
+          }
+
           return res.json({ reply: 'Action confirmed.' })
         }
 
@@ -1280,6 +1324,10 @@ return res.json({
            if (ctx.pendingBucketCreation) {
              ctx.pendingBucketCreation = null
              return res.json({ reply: 'Task creation cancelled.' })
+           }
+           if (ctx.pendingProjectCreation) {
+             ctx.pendingProjectCreation = null
+             return res.json({ reply: 'Project creation cancelled.' })
            }
            return res.json({ reply: 'Nothing to cancel.' })
         }
