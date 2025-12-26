@@ -148,6 +148,17 @@ const Home = () => {
     refetch();
   };
 
+  const handleChatbotAction = (actionData) => {
+    if (actionData.shouldRefresh) {
+      refetch();
+      // Also refresh boards list in case a project was added/deleted/renamed
+      boardsAPI.getAll().then(setBoards).catch(console.error);
+    }
+    if (actionData.activeBoardId && actionData.activeBoardId !== selectedBoardId) {
+      setSelectedBoardId(actionData.activeBoardId);
+    }
+  };
+
   if (loadingBoards) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-slate-900">
@@ -515,7 +526,7 @@ const Home = () => {
           </div>
         </div>
       </Modal>
-      <Chatbot />
+      <Chatbot activeProjectId={selectedBoardId} onAction={handleChatbotAction} />
 
     </div>
     

@@ -8,7 +8,7 @@
     '🗑️ Delete a task'
     ]
 
-    export default function Chatbot() {
+    export default function Chatbot({ activeProjectId, onAction }) {
     const [open, setOpen] = useState(false)
     const [fullscreen, setFullscreen] = useState(false)
     const [dark, setDark] = useState(false)
@@ -47,8 +47,13 @@
         setLoading(true)
 
         try {
-        const reply = await sendMessage(msg)
-        setMessages(prev => [...prev, { role: 'bot', text: reply }])
+        const data = await sendMessage(msg, activeProjectId)
+        setMessages(prev => [...prev, { role: 'bot', text: data.reply || 'No response' }])
+
+        if (onAction && data) {
+            onAction(data)
+        }
+
         } catch {
         setMessages(prev => [
             ...prev,

@@ -427,7 +427,7 @@ ALWAYS guide forward.
 
 
     const ctx = getCtx(req)
-
+    let shouldRefresh = false // Track if state changed
 
     // frontend-controlled active project
     if (req.body.activeProjectId) {
@@ -442,6 +442,7 @@ ALWAYS guide forward.
       if (count === 1) {
         const onlyProject = await Board.findOne()
         ctx.activeBoardId = onlyProject._id
+        shouldRefresh = true // Maybe refreshed selection
       }
     }
 
@@ -478,7 +479,10 @@ ALWAYS guide forward.
         const project = await Board.findOne({
           title: new RegExp(`^${data.project}$`, 'i')
         })
-        if (project) ctx.activeBoardId = project._id
+        if (project) {
+            ctx.activeBoardId = project._id
+            shouldRefresh = true
+        }
       }
 
       switch (action) {
@@ -662,8 +666,11 @@ Would you like to create "${data.bucket}"?`
       taskData.activityType = normalizedActivity
       }
       const task = await Task.create(taskData);
+      shouldRefresh = true; // Task Created
       return res.json({
-      reply: `Task "${task.title}" created in bucket "${bucket.title}".`
+      reply: `Task "${task.title}" created in bucket "${bucket.title}".`,
+      shouldRefresh,
+      activeBoardId: ctx.activeBoardId
       });
             }
 
@@ -807,6 +814,7 @@ Allowed values are:
   }
 
   await task.save()
+  shouldRefresh = true; // Task Updated
 
   console.log('✅ TASK UPDATED:', {
     id: task._id,
@@ -833,7 +841,9 @@ return res.json({
   reply: `Task "${task.title}" updated successfully.
 Priority: ${task.priority || 'unchanged'}
 Progress: ${task.progress || 'unchanged'}
-Activity Type: ${activityLabel}`
+Activity Type: ${activityLabel}`,
+  shouldRefresh,
+  activeBoardId: ctx.activeBoardId
 })
 
 }
@@ -853,6 +863,7 @@ Activity Type: ${activityLabel}`
 
         project.title = data.newName
         await project.save()
+        shouldRefresh = true; // Renamed
         break
       }
 
@@ -882,9 +893,12 @@ Activity Type: ${activityLabel}`
 
         bucket.title = data.newName
         await bucket.save()
+        shouldRefresh = true; // Renamed
 
         return res.json({
-          reply: `Bucket renamed to "${data.newName}"`
+          reply: `Bucket renamed to "${data.newName}"`,
+          shouldRefresh,
+          activeBoardId: ctx.activeBoardId
         })
       }
 
@@ -931,6 +945,7 @@ Activity Type: ${activityLabel}`
 
   task.title = normalize(data.newName)
   await task.save()
+  shouldRefresh = true; // Renamed
 
   finalReply = `Task renamed to "${task.title}".`
   responded = true
@@ -948,9 +963,12 @@ return res.json({ reply: ai.reply })
 
           const project = await Board.create({ title: data.title })
           ctx.activeBoardId = project._id
+          shouldRefresh = true; // Created Project
 
           return res.json({
-            reply: `Project "${project.title}" created and set as active`
+            reply: `Project "${project.title}" created and set as active`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
           })
         }
 
@@ -970,7 +988,12 @@ return res.json({ reply: ai.reply })
              return listProjectsAndAsk(res, 'Project not found.')
         }
           ctx.activeBoardId = project._id
-          return res.json({ reply: `Switched to project "${project.title}"` })
+          shouldRefresh = true; // Switched Project (Refresh to show it)
+          return res.json({
+            reply: `Switched to project "${project.title}"`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
+          })
         }
 
         /* ========== ADD BUCKET ========== */
@@ -992,9 +1015,12 @@ return res.json({ reply: ai.reply })
             title: data.title,
             boardId: project._id
           })
+          shouldRefresh = true; // Bucket Added
 
           return res.json({
-            reply: `Bucket "${data.title}" added to project "${project.title}"`
+            reply: `Bucket "${data.title}" added to project "${project.title}"`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
           })
         }
 
@@ -1015,8 +1041,13 @@ return res.json({ reply: ai.reply })
               .toUpperCase(),
             avatarColor: 'bg-blue-500'
           });
+          shouldRefresh = true; // Member Added
           responded = true;
-          return res.json({ reply: `Member "${data.name}" added successfully.` });
+          return res.json({
+            reply: `Member "${data.name}" added successfully.`,
+            shouldRefresh,
+            activeBoardId: ctx.activeBoardId
+          });
 
         }
 
@@ -1050,6 +1081,7 @@ return res.json({ reply: ai.reply })
           }
 
           await Model.deleteOne({ _id: doc._id })
+          shouldRefresh = true; // Deleted
 
           if (
             data.type === 'project' &&
@@ -1059,7 +1091,11 @@ return res.json({ reply: ai.reply })
           }
 {
           responded = true
-return res.json({ reply: ai.reply || `${data.type} deleted.` })
+return res.json({
+  reply: ai.reply || `${data.type} deleted.`,
+  shouldRefresh,
+  activeBoardId: ctx.activeBoardId
+ })
 }
 
         }
@@ -1092,15 +1128,18 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
               if (type === 'project') {
                 await Board.deleteMany({})
                 ctx.activeBoardId = null
-                return res.json({ reply: 'All projects have been deleted.' })
+                shouldRefresh = true;
+                return res.json({ reply: 'All projects have been deleted.', shouldRefresh, activeBoardId: null })
               }
               if (type === 'member') {
                 await User.deleteMany({})
-                return res.json({ reply: 'All members have been deleted.' })
+                shouldRefresh = true;
+                return res.json({ reply: 'All members have been deleted.', shouldRefresh, activeBoardId: ctx.activeBoardId })
               }
               if (type === 'task') {
                  await Task.deleteMany({})
-                 return res.json({ reply: 'All tasks have been deleted.' })
+                 shouldRefresh = true;
+                 return res.json({ reply: 'All tasks have been deleted.', shouldRefresh, activeBoardId: ctx.activeBoardId })
               }
             }
           }
@@ -1142,8 +1181,11 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
                   : undefined
              })
 
+             shouldRefresh = true;
              return res.json({
-               reply: `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`
+               reply: `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`,
+               shouldRefresh,
+               activeBoardId: ctx.activeBoardId
              })
           }
 
@@ -1170,7 +1212,8 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
           if (ctx.lastDeleted) {
             await ctx.lastDeleted.model.create(ctx.lastDeleted.data)
             ctx.lastDeleted = null
-            return res.json({ reply: 'Undo successful: Deleted item restored. ✅' })
+            shouldRefresh = true;
+            return res.json({ reply: 'Undo successful: Deleted item restored. ✅', shouldRefresh, activeBoardId: ctx.activeBoardId })
           }
 
           // Priority 2: Undo Rename
@@ -1179,7 +1222,8 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
 
             await model.findByIdAndUpdate(id, { title: oldName })
             ctx.lastRename = null
-            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅` })
+            shouldRefresh = true;
+            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅`, shouldRefresh, activeBoardId: ctx.activeBoardId })
           }
 
           return res.json({ reply: 'Nothing to undo.' })
@@ -1366,7 +1410,9 @@ return res.json({ reply: ai.reply || `${data.type} deleted.` })
   if (!responded) {
     console.log('Final fallback response:', finalReply || ai?.reply || 'How can I help you with your project?');
     return res.json({
-      reply: finalReply || ai?.reply || 'How can I help you with your project?'
+      reply: finalReply || ai?.reply || 'How can I help you with your project?',
+      shouldRefresh,
+      activeBoardId: ctx.activeBoardId
     });
   }
 
