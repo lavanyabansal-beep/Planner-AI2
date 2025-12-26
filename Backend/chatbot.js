@@ -264,7 +264,7 @@ REQUIRED FIELD EXTRACTION
 ====================================================
 
 • create_project → data.title
-• add_bucket → data.title
+• add_bucket → data.title AND data.project (if specified)
 • add_task → data.title AND data.bucket
 • rename_* → data.oldName AND data.newName
 • delete → data.type AND data.name
@@ -325,11 +325,10 @@ EXAMPLES
 ====================================================
 
 User: add bucket git to github
-→ github does not exist
+→ { "actions": [{ "action": "add_bucket", "data": { "title": "git", "project": "github" } }] }
 
-Reply:
-"Project 'github' does not exist.
-Would you like me to create it or use an existing project?"
+User: github does not exist
+Reply: "Project 'github' does not exist..."
 
 User: yes
 → create project github
@@ -370,6 +369,9 @@ User: revert to greeting
 
 User: hello
 → { "actions": [{ "action": "greet" }] }
+
+User: Would you like to create "dbbase"? (Bot) -> yes (User)
+→ { "actions": [{ "action": "confirm" }] }
 
 ====================================================
 FINAL RULE
@@ -806,8 +808,8 @@ if (data.progress) {
     data.progress,
     enumFromSchema(Task.schema, 'progress')
   )
-  })
-  }
+})
+}
 
   task.progress = matchedProgress
 }
