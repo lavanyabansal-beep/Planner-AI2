@@ -790,7 +790,17 @@ Try: "set progress to ${data.activityType} in ${data.title}".`
   })
 
   if (!task) {
-    return res.json({ reply: 'Task not found in this project.' })
+    // 💡 Check if user named a Project or Bucket instead
+    const isProject = await Board.findOne({ title: new RegExp(`^${data.title}$`, 'i') })
+    if (isProject) {
+        return res.json({ reply: `"${isProject.title}" is a project. I can only update priority/progress for tasks.` })
+    }
+    const isBucket = await Bucket.findOne({ title: new RegExp(`^${data.title}$`, 'i'), boardId: project._id })
+    if (isBucket) {
+        return res.json({ reply: `"${isBucket.title}" is a bucket. I can only update priority/progress for tasks.` })
+    }
+
+    return res.json({ reply: `Task "${data.title}" not found in this project.` })
   }
 
   // ===== Priority =====
