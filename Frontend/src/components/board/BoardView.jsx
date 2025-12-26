@@ -64,7 +64,7 @@ const BoardView = ({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="h-full overflow-x-auto overflow-y-hidden scrollbar-thin">
+      <div className="h-full overflow-x-auto overflow-y-hidden scrollbar-thin" data-tour="board-view">
         <div className="flex gap-6 p-4 sm:p-6 h-full items-start min-w-min">
           <SortableContext items={buckets.map(b => b._id)} strategy={horizontalListSortingStrategy}>
             {buckets.map(bucket => (

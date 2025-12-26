@@ -14,6 +14,7 @@ const Input = ({
   onBlur,
   onKeyDown,
   ariaLabel,
+  ...props
 }) => {
   const inputId = id || name;
   
@@ -40,6 +41,7 @@ const Input = ({
         aria-label={ariaLabel || label}
         aria-invalid={error ? 'true' : 'false'}
         aria-describedby={error ? `${inputId}-error` : undefined}
+        {...props}
         className={`form-input ${error ? 'border-danger-500 focus:ring-danger-500' : ''} ${className}`}
       />
       {error && (
