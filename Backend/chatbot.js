@@ -753,8 +753,15 @@ Would you like to create "${data.bucket}"?`
       }
       const task = await Task.create(taskData);
       shouldRefresh = true; // Task Created
+
+      let assignmentMsg = '';
+      if (taskData.assignedTo && taskData.assignedTo.length > 0) {
+         const assignedNames = data.assignedTo.join(', ');
+         assignmentMsg = `\nAssigned to: ${assignedNames}`;
+      }
+
       return res.json({
-      reply: `Task "${task.title}" created in bucket "${bucket.title}".`,
+      reply: `Task "${task.title}" created in bucket "${bucket.title}".${assignmentMsg}`,
       shouldRefresh,
       activeBoardId: ctx.activeBoardId
       });
@@ -918,7 +925,8 @@ Allowed values are:
     title: task.title,
     priority: task.priority,
     progress: task.progress,
-    activityType: task.activityType
+    activityType: task.activityType,
+    assignedTo: task.assignedTo
   })
 
   const activityLabelMap = {
@@ -935,11 +943,16 @@ const activityLabel = task.activityType
   ? activityLabelMap[task.activityType] || task.activityType
   : 'unchanged'
 
+let assignReply = '';
+if (data.assignedTo && data.assignedTo.length > 0) {
+    assignReply = `\nAssigned to: ${data.assignedTo.join(', ')}`;
+}
+
 return res.json({
   reply: `Task "${task.title}" updated successfully.
 Priority: ${task.priority || 'unchanged'}
 Progress: ${task.progress || 'unchanged'}
-Activity Type: ${activityLabel}`,
+Activity Type: ${activityLabel}${assignReply}`,
   shouldRefresh,
   activeBoardId: ctx.activeBoardId
 })
@@ -1201,8 +1214,20 @@ return res.json({ reply: ai.reply })
             [field]: new RegExp(data.name, 'i')
           })
 
-          if (!doc)
-            return res.json({ reply: 'Nothing found to delete.' })
+          if (!doc) {
+             // Fallback for plural confusion (e.g. "delete projects")
+             if (data.type === 'project' && /projects?/.test(data.name.toLowerCase())) {
+                 return res.json({
+                     reply: `I couldn't find a project named "${data.name}". Did you mean to delete ALL projects? If so, please say "delete all projects".`
+                 });
+             }
+             if (data.type === 'task' && /tasks?/.test(data.name.toLowerCase())) {
+                 return res.json({
+                     reply: `I couldn't find a task named "${data.name}". Did you mean to delete ALL tasks? If so, please say "delete all tasks".`
+                 });
+             }
+             return res.json({ reply: 'Nothing found to delete.' })
+          }
 
           ctx.lastDeleted = {
             model: Model,
