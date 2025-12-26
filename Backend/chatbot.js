@@ -252,6 +252,7 @@ show_tomorrow
 show_sprint_view
 show_activity_types
 show_capabilities
+greet
 confirm
 cancel
 undo
@@ -296,6 +297,8 @@ SPECIAL RULES
 
 • If user asks "what can you do" or "help" → use action: show_capabilities
 • If user asks "what activity types" → use action: show_activity_types
+
+• If user says "hello", "hi", "hey" → use action: greet
 
 • If user says "revert to greeting" or "reset", use action: reset_chat
 
@@ -364,6 +367,9 @@ User: testing (answering "Which project?")
 
 User: revert to greeting
 → { "actions": [{ "action": "reset_chat" }] }
+
+User: hello
+→ { "actions": [{ "action": "greet" }] }
 
 ====================================================
 FINAL RULE
@@ -490,6 +496,18 @@ ALWAYS guide forward.
       }
 
       switch (action) {
+
+      /* ========== GREET ========== */
+      case 'greet': {
+        const greetings = [
+          'Hello! 👋 How can I help you manage your projects today?',
+          'Hi there! 🚀 Ready to organize some tasks?',
+          'Hey! What can I do for you?',
+          'Greetings! 🤖 I am at your service.'
+        ]
+        const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)]
+        return res.json({ reply: randomGreeting })
+      }
 
       /* ========== RESET CHAT ========== */
       case 'reset_chat': {
