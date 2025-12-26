@@ -9,6 +9,8 @@ const Button = ({
   ariaLabel,
   icon,
   fullWidth = false,
+  'data-tour': dataTour,
+  ...rest
 }) => {
   const baseStyles = 'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-60 disabled:cursor-not-allowed disabled:shadow-none';
   
@@ -32,7 +34,9 @@ const Button = ({
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
+      data-tour={dataTour}
       className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+      {...rest}
     >
       {icon && <span className="flex-shrink-0">{icon}</span>}
       {children}

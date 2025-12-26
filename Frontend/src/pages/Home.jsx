@@ -202,6 +202,7 @@ const Home = () => {
                 <label htmlFor="board-selector" className="sr-only">Select Board</label>
                 <select
                   id="board-selector"
+                  data-tour="board-selector"
                   value={selectedBoardId || ''}
                   onChange={(e) => setSelectedBoardId(e.target.value)}
                   className="bg-gray-700 border-gray-600 text-white rounded-lg px-4 py-2 min-w-[160px] max-w-[240px] text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -256,6 +257,7 @@ const Home = () => {
                 onClick={() => setShowSprintView(true)} 
                 variant="secondary" 
                 size="sm"
+                data-tour="sprintview-btn"
                 ariaLabel="View SprintView chart"
                 icon={
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -270,6 +272,7 @@ const Home = () => {
                 <Button 
                   variant="secondary" 
                   size="sm"
+                  data-tour="final-report-btn"
                   ariaLabel="View Final Project Report"
                   icon={
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -284,6 +287,7 @@ const Home = () => {
                 onClick={() => setShowAddMember(true)} 
                 variant="secondary" 
                 size="sm"
+                data-tour="add-member-btn"
                 ariaLabel="Add team member"
                 icon={
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -297,6 +301,7 @@ const Home = () => {
                 onClick={() => setShowCreateBoard(true)}
                 variant="primary"
                 size="sm"
+                data-tour="create-board-btn"
                 ariaLabel="Create project"
                 icon={
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -403,6 +408,7 @@ const Home = () => {
             onTaskClick={handleTaskClick}
             onBucketClick={(bucket) => setSelectedBucket(bucket)}
             getTasksByBucket={getFilteredTasksByBucket}
+            data-tour="board-view"
           />
         )}
       </main>

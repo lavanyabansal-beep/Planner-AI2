@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Avatar from '../common/Avatar';
 
-const MemberPicker = ({ users, selectedUsers = [], onChange, disabled = false }) => {
+const MemberPicker = ({ users, selectedUsers = [], onChange, disabled = false, ...props }) => {
   const [isOpen, setIsOpen] = useState(false);
 
   const toggleUser = (user) => {
@@ -19,6 +19,7 @@ const MemberPicker = ({ users, selectedUsers = [], onChange, disabled = false })
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         disabled={disabled}
+        {...props}
         className="flex items-center gap-2 px-3 py-2 text-sm text-gray-200 bg-gray-800 border border-gray-600 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
