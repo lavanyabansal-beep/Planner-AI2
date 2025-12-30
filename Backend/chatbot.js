@@ -121,269 +121,164 @@ async function callLLM(ctx, message) {
   const messages = [
     {
       role: 'system',
-      content: `
-You are an AI Project Management Assistant integrated into a real backend system.
+      content: `You are an AI Project Management Assistant integrated into a REAL backend system.
 
-Your job is NOT to execute actions directly.
-Your job is to UNDERSTAND user intent, manage conversational workflows, and guide the user naturally.
+Your job is to UNDERSTAND user intent and break a SINGLE user message
+into MULTIPLE ordered backend actions when needed.
 
-====================================================
-CORE CONCEPTS
-====================================================
-
-• The user says "project" → internally this maps to "board"
-• The system already has:
-  - projects (boards)
-  - buckets (lists)
-  - tasks
-  - users
-• The system supports multi-turn conversations and memory.
-
-You MUST behave like a HUMAN ASSISTANT, not a command parser.
+You DO NOT execute actions.
+You ONLY extract intent and return structured JSON.
 
 ====================================================
-CRITICAL BEHAVIOR RULES (NON-NEGOTIABLE)
+🚀 MULTI-QUERY MODE (CRITICAL – MUST FOLLOW)
 ====================================================
 
-1️⃣ NATURAL LANGUAGE FIRST
-- Accept ANY natural phrasing.
-- Never require specific keywords or rigid prompts.
-- Examples that MUST work:
-  - "get rid of this project"
-  - "undo that"
-  - "add bucket git to github"
-  - "rename gan as GAN"
-  - "yes", "create it", "use existing one"
+The user may give MULTIPLE instructions in ONE message.
 
-2️⃣ CONTEXT AWARENESS
-- Remember previous turns.
-- If the assistant just asked "Which project?", and the user says "testing", interpret it as "set active project to testing".
-- If the assistant just asked "Create bucket X?", and the user says "yes", interpret it as "confirm".
+You MUST:
+• Detect ALL intents in the message
+• Split them into MULTIPLE actions
+• Maintain the CORRECT EXECUTION ORDER
+• Return ALL actions together in ONE JSON response
 
-3️⃣ ACTIVE PROJECT HANDLING (AUTOMATIC)
-- NEVER ask the user to repeatedly "set active project".
-- Determine project using this priority:
-  1. Project explicitly mentioned by user (EXTRACT THIS!)
-  2. Previously active project
-  3. If only one project exists → auto select
-  4. Otherwise → ask ONCE and remember
+----------------------------------------------------
+✅ MULTI-QUERY EXAMPLES (THIS MUST WORK)
+----------------------------------------------------
 
-4️⃣ MISSING INFORMATION FLOW
-- If required info is missing:
-  - Ask a clear, friendly question
-  - Wait for answer
-  - Resume original action automatically
-- DO NOT restart or re-ask everything.
+User:
+"create project gan and add bucket generative and add bucket test"
 
-5️⃣ NON-EXISTING PROJECT HANDLING
-If user refers to a project that does not exist:
-- DO NOT fail
-- DO NOT say "invalid project"
-- Instead:
-  - Explain the project does not exist
-  - Show ALL existing project names
-  - Ask:
-    • Create the project
-    • OR use an existing one
+Return:
+{
+  "actions": [
+    { "action": "create_project", "data": { "title": "gan" } },
+    { "action": "add_bucket", "data": { "title": "generative", "project": "gan" } },
+    { "action": "add_bucket", "data": { "title": "test", "project": "gan" } }
+  ],
+  "reply": "Project gan created with buckets generative and test."
+}
 
-6️⃣ UNDO MUST ALWAYS WORK
-- Undo must work for:
-  - delete project/bucket/task/member
-  - delete ALL projects/buckets/tasks/members
-  - rename project/bucket/task
-- If nothing can be undone, say so clearly.
-- Never ask vague questions like “what do you want to undo”.
+----------------------------------------------------
 
-7️⃣ REAL-TIME CONVERSATION
-- Never say things that imply refresh or restart.
-- Assume backend state updates instantly.
-- Speak as if everything updates immediately.
+User:
+"add bucket frontend and backend to test"
 
-8️⃣ FRIENDLY GUIDANCE (NO DEAD ENDS)
-- NEVER respond with:
-  - “Active project is invalid”
-  - “Please set active project”
-  - “Invalid command”
-- ALWAYS guide the user forward.
+Return:
+{
+  "actions": [
+    { "action": "add_bucket", "data": { "title": "frontend", "project": "test" } },
+    { "action": "add_bucket", "data": { "title": "backend", "project": "test" } }
+  ],
+  "reply": "Added frontend and backend buckets to test."
+}
 
-9️⃣ DATA ACCURACY (CRITICAL)
-- **NEVER** guess or hallucinate data about projects, tasks, or members.
-- If the user asks for data (e.g., "how many projects", "who is a member", "show tasks"), you **MUST** use the appropriate \`show_*\` action.
-- Do NOT assume you know the answer. Let the system fetch it.
+----------------------------------------------------
+
+User:
+"delete bucket testing and delete current"
+
+Return:
+{
+  "actions": [
+    { "action": "delete", "data": { "type": "bucket", "name": "testing" } },
+    { "action": "delete", "data": { "name": "current" } }
+  ],
+  "reply": "Deleted the requested buckets."
+}
+
+----------------------------------------------------
+
+User:
+"add member ram and shyam"
+
+Return:
+{
+  "actions": [
+    { "action": "add_member", "data": { "name": "ram" } },
+    { "action": "add_member", "data": { "name": "shyam" } }
+  ],
+  "reply": "Members Ram and Shyam added."
+}
+
+----------------------------------------------------
+
+User:
+"rename project test to planner and add bucket sprint"
+
+Return:
+{
+  "actions": [
+    { "action": "rename_project", "data": { "oldName": "test", "newName": "planner" } },
+    { "action": "add_bucket", "data": { "title": "sprint" } }
+  ],
+  "reply": "Project renamed and bucket added."
+}
 
 ====================================================
-INTENT EXTRACTION RULES
+🧠 MULTI-INTENT EXTRACTION RULES
+====================================================
+
+1️⃣ ONE MESSAGE → MANY ACTIONS
+- NEVER stop after the first intent
+- Continue scanning until ALL tasks are extracted
+
+2️⃣ ORDER IS MANDATORY
+- create → rename → add → update → delete
+- project → bucket → task → member
+
+3️⃣ SHARED CONTEXT
+- If a project is mentioned once, reuse it
+- Example:
+  "add bucket api and backend to test"
+  → both buckets belong to "test"
+
+4️⃣ IMPLICIT CONTEXT
+- If project is created in the same message,
+  all following actions use that project automatically
+
+5️⃣ DELETE HANDLING
+- If user says "delete X and Y",
+  generate TWO delete actions
+- Type may be omitted if unclear (backend resolves it)
+
+6️⃣ DO NOT ASK QUESTIONS
+- If enough info exists, proceed
+- Backend will handle missing data or confirmations
+
+====================================================
+📦 STRICT RESPONSE FORMAT
 ====================================================
 
 Return ONLY valid JSON.
 
-Format:
 {
   "actions": [
-    {
-      "action": "<intent_name>",
-      "data": { ... }
-    }
+    { "action": "<action_name>", "data": { ... } },
+    { "action": "<action_name>", "data": { ... } }
   ],
-  "reply": "<friendly human response>"
+  "reply": "<single natural summary>"
 }
 
-====================================================
-SUPPORTED ACTIONS
-====================================================
-
-create_project
-add_bucket
-add_task
-add_member
-delete
-delete_all
-rename_project
-rename_bucket
-rename_task
-update_task
-set_active_project
-show_projects
-show_buckets
-show_members
-show_tasks
-show_user_tasks
-show_user_day
-show_today
-show_tomorrow
-show_sprint_view
-show_activity_types
-show_allowed_values
-show_capabilities
-greet
-confirm
-cancel
-undo
-reset_chat
-none
+• NO markdown
+• NO explanations
+• NO comments
+• NO extra text outside JSON
 
 ====================================================
-REQUIRED FIELD EXTRACTION
+⚠️ IMPORTANT CONSTRAINTS
 ====================================================
 
-• create_project → data.title
-• add_bucket → data.title AND data.project (if specified)
-• add_task → data.title AND data.bucket
-• rename_* → data.oldName AND data.newName
-• delete → data.type AND data.name
-• delete_all → data.type (projects, members, tasks)
-• add_member → data.name
-• update_task → data.title (and fields being updated)
-• show_allowed_values → data.field (priority, progress, activityType)
+• Do NOT execute actions
+• Do NOT validate database state
+• Do NOT ask follow-up questions unless absolutely required
+• Backend is the source of truth
 
 ====================================================
-SPECIAL RULES
+🎯 FINAL GOAL
 ====================================================
 
-• **PRIORITY vs PROGRESS**:
-  - **Priority** values are ONLY: urgent, important, medium, low
-  - **Progress** values are ONLY: not started, in progress, completed
-  - **Activity Types** are ONLY: One-Time, Continuous, API/1-Day, Recurring Weekly, Buffer, Parallel Allowed, Milestone
-
-• If user says "set priority to not started", CORRECT them to "progress".
-• If user says "set progress to urgent", CORRECT them to "priority".
-
-• If user asks "what values can I set for X", use action: show_allowed_values with data.field = X.
-
-• If user says "undo" → ALWAYS use action: undo
-
-• If user says "yes" or "confirm" (after a confirmation request) → use action: confirm
-• If user says "no" or "cancel" → use action: cancel
-
-• If user asks "what can you do" or "help" → use action: show_capabilities
-• If user asks "what activity types" → use action: show_activity_types
-
-• If user says "hello", "hi", "hey" → use action: greet
-
-• If user says "revert to greeting" or "reset", use action: reset_chat
-
-• **Single Word Project Selection**:
-  If the user provides a single word (e.g., "testing", "gan") and it looks like a project name, especially after being asked to select a project, assume action: set_active_project with data.title = <word>.
-
-• If information is missing:
-  - Use action: none
-  - Ask a clear follow-up question
-
-====================================================
-TONE & STYLE
-====================================================
-
-• Friendly
-• Clear
-• Helpful
-• Confident
-• Never robotic
-• Never technical to the user
-
-====================================================
-EXAMPLES
-====================================================
-
-User: add bucket git to github
-→ { "actions": [{ "action": "add_bucket", "data": { "title": "git", "project": "github" } }] }
-
-User: github does not exist
-Reply: "Project 'github' does not exist..."
-
-User: yes
-→ create project github
-→ add bucket git
-
-User: rename gan to GAN
-→ rename_project
-
-User: undo
-→ revert rename
-
-User: delete all projects
-→ { "actions": [{ "action": "delete_all", "data": { "type": "project" } }] }
-
-User: yes (answering confirmation)
-→ { "actions": [{ "action": "confirm" }] }
-
-User: what values for priority
-→ { "actions": [{ "action": "show_allowed_values", "data": { "field": "priority" } }] }
-
-User: what can i set progress to
-→ { "actions": [{ "action": "show_allowed_values", "data": { "field": "progress" } }] }
-
-User: assign generative to ram
-→ { "actions": [{ "action": "update_task", "data": { "title": "generative", "assignedTo": ["ram"] } }] }
-
-User: what work is assigned to ram
-→ { "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }] }
-
-User: ram (answering "Which user?")
-→ { "actions": [{ "action": "show_user_tasks", "data": { "user": "ram" } }] }
-
-User: testing (answering "Which project?")
-→ { "actions": [{ "action": "set_active_project", "data": { "title": "testing" } }] }
-
-User: revert to greeting
-→ { "actions": [{ "action": "reset_chat" }] }
-
-User: hello
-→ { "actions": [{ "action": "greet" }] }
-
-User: Would you like to create "dbbase"? (Bot) -> yes (User)
-→ { "actions": [{ "action": "confirm" }] }
-
-====================================================
-FINAL RULE
-====================================================
-
-You are a WORKFLOW CONTROLLER.
-Your goal is to help the user succeed with minimum friction.
-
-NEVER break the conversation flow.
-NEVER require exact prompts.
-ALWAYS guide forward.
-`
+Allow the user to complete MULTIPLE tasks
+in ONE message with ZERO friction.`
     },
     ...(ctx.history || []),
     { role: 'user', content: message }
@@ -423,12 +318,10 @@ ALWAYS guide forward.
     🚀 CHAT ROUTE
   ===================================================== */
 
-  async function listProjectsAndAsk(res, message) {
+  async function listProjectsAndAsk(message) {
     const projects = await Board.find().sort({ createdAt: -1 })
     const projectList = projects.map(p => `• ${p.title}`).join('\n')
-    return res.json({
-      reply: `${message}\n\nHere are the existing projects:\n${projectList}\n\nWould you like to create a new one or use one of these?`
-    })
+    return `${message}\n\nHere are the existing projects:\n${projectList}\n\nWould you like to create a new one or use one of these?`
   }
  
   router.post('/', async (req, res) => {
@@ -459,7 +352,6 @@ ALWAYS guide forward.
     }
 
     try {
-      let responded = false;
       pushHistory(ctx, 'user', message);
 
       const ai = await callLLM(ctx, message);
@@ -477,43 +369,46 @@ ALWAYS guide forward.
 
       console.log('Actions to process:', actions);
 
-      /* =====================================================
-        🔁 AUTO SWITCH PROJECT IF PROVIDED
-      ===================================================== */
-      let finalReply = ai.reply || 'How can I help you with your project?';
+      let accumulatedReplies = [];
+      let stopProcessing = false;
+
+      // Special case: If multiple show_* actions, we probably want to see them all.
+      // If mix of modification and show, we want both.
       
       for (const step of actions) {
+        if (stopProcessing) break;
+
         const action = step.action || 'none'
         const data = step.data || {}
+        let actionReply = null; // Specific reply for this action
 
-      // 🔁 auto switch project (VALIDATED)
-      if (data.project) {
-        const project = await Board.findOne({
-          title: new RegExp(`^${data.project}$`, 'i')
-        })
-        if (project) {
-            ctx.activeBoardId = project._id
-            shouldRefresh = true
-        } else {
-            // 🔥 Project NOT FOUND
-            responded = true;
-            
-            // Store pending state for creation
-            ctx.pendingProjectCreation = {
-              title: data.project,
-              nextAction: step
-            }
+        // 🔁 auto switch project (VALIDATED)
+        if (data.project) {
+          const project = await Board.findOne({
+            title: new RegExp(`^${data.project}$`, 'i')
+          })
+          if (project) {
+              ctx.activeBoardId = project._id
+              shouldRefresh = true
+          } else {
+              // 🔥 Project NOT FOUND
+              // We must stop to ask user
+              const projects = await Board.find().sort({ createdAt: -1 })
+              const projectList = projects.length > 0
+                ? projects.map(p => `• ${p.title}`).join('\n')
+                : 'None'
 
-            const projects = await Board.find().sort({ createdAt: -1 })
-            const projectList = projects.length > 0 
-              ? projects.map(p => `• ${p.title}`).join('\n')
-              : 'None'
+              accumulatedReplies.push(`Project "${data.project}" does not exist.\n\nAvailable projects:\n${projectList}\n\nWould you like to create "${data.project}"?`);
 
-            return res.json({
-              reply: `Project "${data.project}" does not exist.\n\nAvailable projects:\n${projectList}\n\nWould you like to create "${data.project}"?`
-            })
+              // Store pending state for creation
+              ctx.pendingProjectCreation = {
+                title: data.project,
+                nextAction: step
+              }
+              stopProcessing = true;
+              break;
+          }
         }
-      }
 
       switch (action) {
 
@@ -525,20 +420,20 @@ ALWAYS guide forward.
           'Hey! What can I do for you?',
           'Greetings! 🤖 I am at your service.'
         ]
-        const randomGreeting = greetings[Math.floor(Math.random() * greetings.length)]
-        return res.json({ reply: randomGreeting })
+        actionReply = greetings[Math.floor(Math.random() * greetings.length)]
+        break;
       }
 
       /* ========== RESET CHAT ========== */
       case 'reset_chat': {
         ctx.history = []
-        return res.json({ reply: 'Hello! I am your Planner AI. How can I help you today? 👋' })
+        actionReply = 'Hello! I am your Planner AI. How can I help you today? 👋';
+        break;
       }
 
       /* ========== SHOW CAPABILITIES ========== */
       case 'show_capabilities': {
-        return res.json({
-          reply: `I can help you with the following:
+        actionReply = `I can help you with the following:
 • Create and manage projects (boards)
 • Add, rename, and delete buckets (lists)
 • Add, update, and assign tasks
@@ -547,16 +442,15 @@ ALWAYS guide forward.
 • Undo recent changes (including delete all)
 • Answer questions about your project data (e.g., "what is ram doing")
 
-Just ask me naturally! 🚀`
-        })
+Just ask me naturally! 🚀`;
+        break;
       }
 
       /* ========== SHOW ACTIVITY TYPES ========== */
       case 'show_activity_types': {
         const list = allowedActivityTypes.map(t => `• ${t.replace(/_/g, ' ')}`).join('\n')
-        return res.json({
-          reply: `Here are the available activity types:\n${list}`
-        })
+        actionReply = `Here are the available activity types:\n${list}`;
+        break;
       }
 
       /* ========== SHOW ALLOWED VALUES ========== */
@@ -575,20 +469,21 @@ Just ask me naturally! 🚀`
             values = allowedActivityTypes;
             name = 'Activity Type';
         } else {
-            return res.json({ reply: 'I can show allowed values for: Priority, Progress, and Activity Type.' });
+            actionReply = 'I can show allowed values for: Priority, Progress, and Activity Type.';
+            break;
         }
 
         const list = values.map(v => `• ${v.replace(/_/g, ' ')}`).join('\n');
-        return res.json({
-            reply: `Here are the allowed values for ${name}:\n${list}`
-        });
+        actionReply = `Here are the allowed values for ${name}:\n${list}`;
+        break;
       }
 
 
       /* ========== SHOW USER TASKS (ALL – CHATBOT OUTPUT) ========== */
       case 'show_user_tasks': {
         if (!data.user) {
-          return res.json({ reply: 'Which user should I check?' })
+          actionReply = 'Which user should I check?';
+          break;
         }
 
         const user = await User.findOne({
@@ -596,7 +491,8 @@ Just ask me naturally! 🚀`
         })
 
         if (!user) {
-          return res.json({ reply: `User "${data.user}" not found.` })
+          actionReply = `User "${data.user}" not found.`;
+          break;
         }
 
         const tasks = await Task.find({
@@ -606,9 +502,8 @@ Just ask me naturally! 🚀`
           .select('title priority progress bucketId activityType estimatedDays dueDate')
 
         if (!tasks.length) {
-          return res.json({
-            reply: `No tasks are assigned to ${user.name}.`
-          })
+          actionReply = `No tasks are assigned to ${user.name}.`;
+          break;
         }
 
 
@@ -633,31 +528,28 @@ Just ask me naturally! 🚀`
         )
       })
 
-      return res.json({
-        reply: `Here is the work assigned to ${user.name}:${LINE}${LINE}${taskLines.join(`${LINE}${LINE}`)}`
-      })
+      actionReply = `Here is the work assigned to ${user.name}:${LINE}${LINE}${taskLines.join(`${LINE}${LINE}`)}`;
+      break;
       }
 
 
       /* ========== ADD TASK (Formerly create_task) ========== */
       case 'add_task': {
         // Required: title, bucket
-        // Optional: description, assignedTo, priority, progress, activityType, etaDays, startDate, dueDate, checklist
         const missing = [];
         if (!data.title) missing.push('title');
         if (!data.bucket) missing.push('bucket');
 
-        // Ask for missing required fields
         if (missing.length) {
-          responded = true;
-          return res.json({
-            reply: `Please provide: ${missing.join(', ')} to add a task.`
-          });
+          actionReply = `Please provide: ${missing.join(', ')} to add a task.`;
+          break;
         }
 
         const project = await Board.findById(ctx.activeBoardId);
         if (!project) {
-           return listProjectsAndAsk(res, 'Please select a project first.')
+           actionReply = await listProjectsAndAsk('Please select a project first.');
+           stopProcessing = true;
+           break;
         }
 
         const bucket = await Bucket.findOne({
@@ -678,14 +570,9 @@ Just ask me naturally! 🚀`
             ? existingBuckets.map(b => `• ${b.title}`).join('\n')
             : 'No buckets found.'
 
-          return res.json({
-            reply: `Bucket "${data.bucket}" does not exist in project "${project.title}".
-            
-Available buckets:
-${bucketList}
-
-Would you like to create "${data.bucket}"?`
-          })
+          actionReply = `Bucket "${data.bucket}" does not exist in project "${project.title}".\n\nAvailable buckets:\n${bucketList}\n\nWould you like to create "${data.bucket}"?`;
+          stopProcessing = true; // Interactive break
+          break;
         }
 
         // 🚫 Check for Duplicate Task
@@ -694,19 +581,18 @@ Would you like to create "${data.bucket}"?`
             bucketId: bucket._id 
         });
         if (existingTask) {
-            return res.json({
-                reply: `Task "${data.title}" already exists in bucket "${bucket.title}".`
-            });
+            actionReply = `Task "${data.title}" already exists in bucket "${bucket.title}".`;
+            break;
         }
 
         // Validate users
         let assignedIds = [];
         if (data.assignedTo?.length) {
-          const { users, missing } = await resolveUsersByNames(data.assignedTo);
-          if (missing.length) {
-            return res.json({
-              reply: `User(s) ${missing.join(', ')} do not exist. Should I create them?`
-            });
+          const { users, missing: missingUsers } = await resolveUsersByNames(data.assignedTo);
+          if (missingUsers.length) {
+            actionReply = `User(s) ${missingUsers.join(', ')} do not exist. Should I create them?`;
+            stopProcessing = true; // Maybe we should support user creation flow, but for now break
+            break;
           }
           assignedIds = users;
         }
@@ -740,25 +626,17 @@ Would you like to create "${data.bucket}"?`
         const normalizedActivity = normalizeActivityType(data.activityType)
 
         if (!normalizedActivity) {
-          return res.json({
-        reply: formatError(
-          'activity type',
-          data.activityType,
-          allowedActivityTypes
-        )
-      })
+            actionReply = formatError('activity type', data.activityType, allowedActivityTypes);
+            break;
+        }
+        taskData.activityType = normalizedActivity
       }
 
-      taskData.activityType = normalizedActivity
-      }
       const task = await Task.create(taskData);
       shouldRefresh = true; // Task Created
-      return res.json({
-      reply: `Task "${task.title}" created in bucket "${bucket.title}".`,
-      shouldRefresh,
-      activeBoardId: ctx.activeBoardId
-      });
-            }
+      actionReply = `Task "${task.title}" created in bucket "${bucket.title}".`;
+      break;
+    }
 
  /* ========== UPDATE TASK (FULL) ========== */
 case 'update_task': {
@@ -766,19 +644,20 @@ case 'update_task': {
 const forbiddenAsActivity = ['completed', 'in progress', 'not started']
 
 if (data.activityType && forbiddenAsActivity.includes(data.activityType.toLowerCase())) {
-  return res.json({
-    reply: `Did you mean to update progress instead of activity? 
-Try: "set progress to ${data.activityType} in ${data.title}".`
-  })
+  actionReply = `Did you mean to update progress instead of activity? Try: "set progress to ${data.activityType} in ${data.title}".`;
+  break;
 }
 
   if (!data.title) {
-    return res.json({ reply: 'Please specify the task title to update.' })
+    actionReply = 'Please specify the task title to update.';
+    break;
   }
 
   const project = await Board.findById(ctx.activeBoardId)
   if (!project) {
-    return listProjectsAndAsk(res, 'Please select a project first.')
+    actionReply = await listProjectsAndAsk('Please select a project first.');
+    stopProcessing = true;
+    break;
   }
 
   const buckets = await Bucket.find({ boardId: project._id })
@@ -793,14 +672,17 @@ Try: "set progress to ${data.activityType} in ${data.title}".`
     // 💡 Check if user named a Project or Bucket instead
     const isProject = await Board.findOne({ title: new RegExp(`^${data.title}$`, 'i') })
     if (isProject) {
-        return res.json({ reply: `"${isProject.title}" is a project. I can only update priority/progress for tasks.` })
+        actionReply = `"${isProject.title}" is a project. I can only update priority/progress for tasks.`;
+        break;
     }
     const isBucket = await Bucket.findOne({ title: new RegExp(`^${data.title}$`, 'i'), boardId: project._id })
     if (isBucket) {
-        return res.json({ reply: `"${isBucket.title}" is a bucket. I can only update priority/progress for tasks.` })
+        actionReply = `"${isBucket.title}" is a bucket. I can only update priority/progress for tasks.`;
+        break;
     }
 
-    return res.json({ reply: `Task "${data.title}" not found in this project.` })
+    actionReply = `Task "${data.title}" not found in this project.`;
+    break;
   }
 
   // ===== Priority =====
@@ -811,20 +693,12 @@ Try: "set progress to ${data.activityType} in ${data.title}".`
     )
 
     if (!matchedPriority) {
-      return res.json({
-  reply: formatError(
-    'priority',
-    data.priority,
-    enumFromSchema(Task.schema, 'priority')
-  )
-})
-
+        actionReply = formatError('priority', data.priority, enumFromSchema(Task.schema, 'priority'));
+        break;
     }
-
     task.priority = matchedPriority
   }
 
-  // ===== Progress =====
   // ===== Progress =====
 if (data.progress) {
   const progressEnum = enumFromSchema(Task.schema, 'progress')
@@ -851,15 +725,9 @@ if (data.progress) {
   )
 
   if (!matchedProgress) {
-    return res.json({
-  reply: formatError(
-    'progress',
-    data.progress,
-    enumFromSchema(Task.schema, 'progress')
-  )
-})
-}
-
+      actionReply = formatError('progress', data.progress, enumFromSchema(Task.schema, 'progress'));
+      break;
+  }
   task.progress = matchedProgress
 }
 
@@ -868,23 +736,11 @@ if (data.activityType) {
   const normalizedActivity = normalizeActivityType(data.activityType)
 
   if (!normalizedActivity || !allowedActivityTypes.includes(normalizedActivity)) {
-    return res.json({
-      reply: `Invalid activity type: ${data.activityType}.
-Allowed values are:
-• One-Time
-• Continuous
-• API/1-Day
-• Recurring Weekly
-• Buffer
-• Parallel Allowed
-• Milestone`
-    })
+    actionReply = `Invalid activity type: ${data.activityType}.`;
+    break;
   }
-
   task.activityType = normalizedActivity
 }
-
-
 
   // ===== Other fields =====
   if (data.newTitle) task.title = normalize(data.newTitle)
@@ -897,9 +753,8 @@ Allowed values are:
   if (data.assignedTo) {
     const { users, missing } = await resolveUsersByNames(data.assignedTo)
     if (missing.length) {
-      return res.json({
-        reply: `User(s) ${missing.join(', ')} do not exist.`
-      })
+      actionReply = `User(s) ${missing.join(', ')} do not exist.`;
+      break;
     }
     task.assignedTo = users
   }
@@ -912,14 +767,6 @@ Allowed values are:
 
   await task.save()
   shouldRefresh = true; // Task Updated
-
-  console.log('✅ TASK UPDATED:', {
-    id: task._id,
-    title: task.title,
-    priority: task.priority,
-    progress: task.progress,
-    activityType: task.activityType
-  })
 
   const activityLabelMap = {
   ONE_TIME: 'One-Time',
@@ -935,23 +782,17 @@ const activityLabel = task.activityType
   ? activityLabelMap[task.activityType] || task.activityType
   : 'unchanged'
 
-return res.json({
-  reply: `Task "${task.title}" updated successfully.
+actionReply = `Task "${task.title}" updated successfully.
 Priority: ${task.priority || 'unchanged'}
 Progress: ${task.progress || 'unchanged'}
-Activity Type: ${activityLabel}`,
-  shouldRefresh,
-  activeBoardId: ctx.activeBoardId
-})
-
+Activity Type: ${activityLabel}`;
+  break;
 }
-
-      
 
       /* ========== RENAME PROJECT ========== */
       case 'rename_project': {
         if (!data.oldName || !data.newName) {
-            finalReply = "Please provide the old and new project names.";
+            actionReply = "Please provide the old and new project names.";
             break;
         }
 
@@ -960,7 +801,7 @@ Activity Type: ${activityLabel}`,
         })
         
         if (!project) {
-            finalReply = `Project "${data.oldName}" not found.`;
+            actionReply = `Project "${data.oldName}" not found.`;
             break;
         }
 
@@ -970,25 +811,23 @@ Activity Type: ${activityLabel}`,
         await project.save()
         shouldRefresh = true; // Renamed
         
-        return res.json({
-            reply: `Project renamed to "${data.newName}".`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
-        });
+        actionReply = `Project renamed to "${data.newName}".`;
+        break;
       }
 
 
           //rename bucket
  case 'rename_bucket': {
   if (!data.oldName || !data.newName) {
-    responded = true
-    return res.json({ reply: ai.reply || 'Done.' })
+    actionReply = 'Please provide old and new bucket names.';
+    break;
   }
-
 
         const project = await Board.findById(ctx.activeBoardId)
         if (!project) {
-          return listProjectsAndAsk(res, 'Please select a project first.')
+          actionReply = await listProjectsAndAsk('Please select a project first.');
+          stopProcessing = true;
+          break;
         }
 
         const bucket = await Bucket.findOne({
@@ -996,8 +835,10 @@ Activity Type: ${activityLabel}`,
           boardId: project._id
         })
 
-        if (!bucket)
-          return res.json({ reply: 'Bucket not found.' })
+        if (!bucket) {
+          actionReply = 'Bucket not found.';
+          break;
+        }
 
         saveRenameUndo(ctx, Bucket, bucket._id, bucket.title)
 
@@ -1005,25 +846,22 @@ Activity Type: ${activityLabel}`,
         await bucket.save()
         shouldRefresh = true; // Renamed
 
-        return res.json({
-          reply: `Bucket renamed to "${data.newName}"`,
-          shouldRefresh,
-          activeBoardId: ctx.activeBoardId
-        })
+        actionReply = `Bucket renamed to "${data.newName}"`;
+        break;
       }
-
-
 
       // rename task
       case 'rename_task': {
   if (!data.oldName || !data.newName) {
-    finalReply = 'Please provide old and new task names.'
+    actionReply = 'Please provide old and new task names.'
     break
   }
 
   const project = await Board.findById(ctx.activeBoardId)
   if (!project) {
-    return listProjectsAndAsk(res, 'Please select a project first.')
+    actionReply = await listProjectsAndAsk('Please select a project first.');
+    stopProcessing = true;
+    break;
   }
 
   const bucket = data.bucket
@@ -1034,7 +872,7 @@ Activity Type: ${activityLabel}`,
     : await Bucket.findOne({ boardId: project._id })
 
   if (!bucket) {
-    finalReply = 'Bucket not found.'
+    actionReply = 'Bucket not found.';
     break
   }
 
@@ -1044,7 +882,7 @@ Activity Type: ${activityLabel}`,
   })
 
   if (!task) {
-    finalReply = `Task "${data.oldName}" not found in "${bucket.title}".`
+    actionReply = `Task "${data.oldName}" not found in "${bucket.title}".`;
     break
   }
 
@@ -1054,19 +892,16 @@ Activity Type: ${activityLabel}`,
   await task.save()
   shouldRefresh = true; // Renamed
 
-  return res.json({
-    reply: `Task renamed to "${task.title}".`,
-    shouldRefresh,
-    activeBoardId: ctx.activeBoardId
-  })
+  actionReply = `Task renamed to "${task.title}".`;
+  break;
 }
 
 
         /* ========== CREATE PROJECT ========== */
         case 'create_project': {
           if (!data.title){
-            responded = true
-return res.json({ reply: ai.reply })
+            actionReply = 'Project title is missing.';
+            break;
           }
 
           // 🚫 Check for Duplicate Project
@@ -1074,59 +909,55 @@ return res.json({ reply: ai.reply })
               title: new RegExp(`^${data.title}$`, 'i') 
           });
           if (existingProject) {
-              return res.json({
-                  reply: `Project "${existingProject.title}" already exists. Please choose a different name.`
-              });
+             // 🚀 Frictionless: Switch to it instead of failing
+             ctx.activeBoardId = existingProject._id;
+             shouldRefresh = true;
+             actionReply = `Project "${existingProject.title}" already exists. Switched to it.`;
+          } else {
+             const project = await Board.create({ title: data.title })
+             ctx.activeBoardId = project._id
+             shouldRefresh = true; // Created Project
+             actionReply = `Project "${project.title}" created.`;
           }
-
-          const project = await Board.create({ title: data.title })
-          ctx.activeBoardId = project._id
-          shouldRefresh = true; // Created Project
-
-          return res.json({
-            reply: `Project "${project.title}" created and set as active`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
-          })
+          break;
         }
 
         /* ========== SET ACTIVE PROJECT ========== */
         case 'set_active_project': {
           if (!data.title){
-          responded = true
-return res.json({ reply: ai.reply })
+            actionReply = 'Project title is missing.';
+            break;
           }
-
 
           const project = await Board.findOne({
             title: new RegExp(`^${data.title}$`, 'i')
           })
 
           if (!project){
-             return listProjectsAndAsk(res, 'Project not found.')
-        }
+             actionReply = await listProjectsAndAsk(`Project "${data.title}" not found.`);
+             stopProcessing = true;
+             break;
+          }
           ctx.activeBoardId = project._id
           shouldRefresh = true; // Switched Project (Refresh to show it)
-          return res.json({ 
-            reply: `Switched to project "${project.title}"`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
-          })
+          actionReply = `Switched to project "${project.title}"`;
+          break;
         }
 
         /* ========== ADD BUCKET ========== */
         case 'add_bucket': {
           if (!data.title){
-            responded = true
-return res.json({ reply: ai.reply })
+            actionReply = 'Bucket title is missing.';
+            break;
           }
-
 
           const project = await Board.findById(ctx.activeBoardId)
 
           if (!project) {
             ctx.activeBoardId = null
-            return listProjectsAndAsk(res, 'Active project is invalid. Please select a project.')
+            actionReply = await listProjectsAndAsk('Active project is invalid. Please select a project.');
+            stopProcessing = true;
+            break;
           }
 
           // 🚫 Check for Duplicate Bucket
@@ -1135,31 +966,24 @@ return res.json({ reply: ai.reply })
               boardId: project._id 
           });
           if (existingBucket) {
-              return res.json({
-                  reply: `Bucket "${existingBucket.title}" already exists in project "${project.title}".`
-              });
+             actionReply = `Bucket "${existingBucket.title}" already exists in project "${project.title}".`;
+          } else {
+             await Bucket.create({
+                title: data.title,
+                boardId: project._id
+             })
+             shouldRefresh = true; // Bucket Added
+             actionReply = `Bucket "${data.title}" added to project "${project.title}"`;
           }
-
-          await Bucket.create({
-            title: data.title,
-            boardId: project._id
-          })
-          shouldRefresh = true; // Bucket Added
-
-          return res.json({
-            reply: `Bucket "${data.title}" added to project "${project.title}"`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
-          })
+          break;
         }
 
         /* ========== ADD MEMBER ========== */
         case 'add_member': {
           if (!data.name){
-            responded = true
-return res.json({ reply: ai.reply })
+            actionReply = 'Member name is missing.';
+            break;
           }
-
 
           await User.create({
             name: data.name,
@@ -1171,21 +995,15 @@ return res.json({ reply: ai.reply })
             avatarColor: 'bg-blue-500'
           });
           shouldRefresh = true; // Member Added
-          responded = true;
-          return res.json({ 
-            reply: `Member "${data.name}" added successfully.`,
-            shouldRefresh,
-            activeBoardId: ctx.activeBoardId
-          });
-
+          actionReply = `Member "${data.name}" added successfully.`;
+          break;
         }
 
         /* ========== DELETE ========== */
         case 'delete': {
           if (!data.type || !data.name){
-            responded = true
-return res.json({ reply: ai.reply })
-
+            actionReply = 'Missing type or name for deletion.';
+            break;
           }
           let Model, field
 
@@ -1194,15 +1012,19 @@ return res.json({ reply: ai.reply })
           if (data.type === 'project') { Model = Board; field = 'title' }
           if (data.type === 'member') { Model = User; field = 'name' }
 
-          if (!Model)
-            return res.json({ reply: 'Invalid delete request.' })
+          if (!Model) {
+            actionReply = 'Invalid delete request.';
+            break;
+          }
 
           const doc = await Model.findOne({
             [field]: new RegExp(data.name, 'i')
           })
 
-          if (!doc)
-            return res.json({ reply: 'Nothing found to delete.' })
+          if (!doc) {
+            actionReply = `Nothing found to delete for ${data.type} "${data.name}".`;
+            break;
+          }
 
           ctx.lastDeleted = {
             model: Model,
@@ -1218,21 +1040,15 @@ return res.json({ reply: ai.reply })
           ) {
             ctx.activeBoardId = null
           }
-{
-          responded = true
-return res.json({ 
-  reply: ai.reply || `${data.type} deleted.`,
-  shouldRefresh,
-  activeBoardId: ctx.activeBoardId
- })
-}
-
+          actionReply = `${data.type} "${doc[field]}" deleted.`;
+          break;
         }
 
         /* ========== DELETE ALL ========== */
         case 'delete_all': {
           if (!data.type) {
-            return res.json({ reply: 'What would you like to delete all of?' })
+            actionReply = 'What would you like to delete all of?';
+            break;
           }
 
           ctx.pendingConfirmation = {
@@ -1240,9 +1056,9 @@ return res.json({
             type: data.type
           }
 
-          return res.json({
-            reply: `⚠️ Are you sure you want to PERMANENTLY delete ALL ${data.type}s? This cannot be undone.`
-          })
+          actionReply = `⚠️ Are you sure you want to PERMANENTLY delete ALL ${data.type}s? This cannot be undone.`;
+          stopProcessing = true; // Wait for confirmation
+          break;
         }
 
         /* ========== CONFIRM ========== */
@@ -1262,31 +1078,29 @@ return res.json({
                 }
                 ctx.activeBoardId = null
                 shouldRefresh = true;
-                return res.json({ reply: 'All projects have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: null })
-              }
-              if (type === 'member') {
+                actionReply = 'All projects have been deleted. You can say "undo" to restore them.';
+              } else if (type === 'member') {
                 const users = await User.find({})
                 if (users.length > 0) {
                     ctx.lastDeletedAll = { type: 'member', items: users.map(u => u.toObject()) }
                     await User.deleteMany({})
                 }
                 shouldRefresh = true;
-                return res.json({ reply: 'All members have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: ctx.activeBoardId })
-              }
-              if (type === 'task') {
+                actionReply = 'All members have been deleted. You can say "undo" to restore them.';
+              } else if (type === 'task') {
                  const tasks = await Task.find({})
                  if (tasks.length > 0) {
                     ctx.lastDeletedAll = { type: 'task', items: tasks.map(t => t.toObject()) }
                     await Task.deleteMany({})
                  }
                  shouldRefresh = true;
-                 return res.json({ reply: 'All tasks have been deleted. You can say "undo" to restore them.', shouldRefresh, activeBoardId: ctx.activeBoardId })
+                 actionReply = 'All tasks have been deleted. You can say "undo" to restore them.';
               }
             }
           }
           
           // 2. Pending Bucket Creation
-          if (ctx.pendingBucketCreation) {
+          else if (ctx.pendingBucketCreation) {
              const { bucketName, taskData, projectId } = ctx.pendingBucketCreation
              ctx.pendingBucketCreation = null
              
@@ -1297,8 +1111,6 @@ return res.json({
              })
              
              // Then Create Task
-             // Re-validate logic similar to add_task
-             // (Simplified here assuming data is valid as it came from add_task)
              const priorityEnum = enumFromSchema(Task.schema, 'priority');
              const progressEnum = enumFromSchema(Task.schema, 'progress');
              
@@ -1323,15 +1135,11 @@ return res.json({
              })
              
              shouldRefresh = true;
-             return res.json({
-               reply: `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`,
-               shouldRefresh,
-               activeBoardId: ctx.activeBoardId
-             })
+             actionReply = `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`;
           }
 
           // 3. Pending Project Creation
-          if (ctx.pendingProjectCreation) {
+          else if (ctx.pendingProjectCreation) {
              const { title, nextAction } = ctx.pendingProjectCreation
              ctx.pendingProjectCreation = null
              
@@ -1346,38 +1154,31 @@ return res.json({
                     title: nextAction.data.title,
                     boardId: project._id
                  })
-                 return res.json({
-                    reply: `Project "${project.title}" created and Bucket "${nextAction.data.title}" added. ✅`,
-                    shouldRefresh,
-                    activeBoardId: ctx.activeBoardId
-                 })
+                 actionReply = `Project "${project.title}" created and Bucket "${nextAction.data.title}" added. ✅`;
+             } else {
+                 actionReply = `Project "${project.title}" created and set as active. ✅`;
              }
-             
-             return res.json({
-               reply: `Project "${project.title}" created and set as active. ✅`,
-               shouldRefresh,
-               activeBoardId: ctx.activeBoardId
-             })
+          } else {
+              actionReply = 'Action confirmed.';
           }
-          
-          return res.json({ reply: 'Action confirmed.' })
+          break;
         }
 
         /* ========== CANCEL ========== */
         case 'cancel': {
            if (ctx.pendingConfirmation) {
              ctx.pendingConfirmation = null
-             return res.json({ reply: 'Action cancelled.' })
-           }
-           if (ctx.pendingBucketCreation) {
+             actionReply = 'Action cancelled.';
+           } else if (ctx.pendingBucketCreation) {
              ctx.pendingBucketCreation = null
-             return res.json({ reply: 'Task creation cancelled.' })
-           }
-           if (ctx.pendingProjectCreation) {
+             actionReply = 'Task creation cancelled.';
+           } else if (ctx.pendingProjectCreation) {
              ctx.pendingProjectCreation = null
-             return res.json({ reply: 'Project creation cancelled.' })
+             actionReply = 'Project creation cancelled.';
+           } else {
+             actionReply = 'Nothing to cancel.';
            }
-           return res.json({ reply: 'Nothing to cancel.' })
+           break;
         }
 
 
@@ -1392,7 +1193,8 @@ return res.json({
              
              ctx.lastDeletedAll = null
              shouldRefresh = true
-             return res.json({ reply: `Undo successful: All ${type}s restored. ✅`, shouldRefresh, activeBoardId: ctx.activeBoardId })
+             actionReply = `Undo successful: All ${type}s restored. ✅`;
+             break;
           }
 
           // Priority 1: Undo Delete
@@ -1400,7 +1202,8 @@ return res.json({
             await ctx.lastDeleted.model.create(ctx.lastDeleted.data)
             ctx.lastDeleted = null
             shouldRefresh = true;
-            return res.json({ reply: 'Undo successful: Deleted item restored. ✅', shouldRefresh, activeBoardId: ctx.activeBoardId })
+            actionReply = 'Undo successful: Deleted item restored. ✅';
+            break;
           }
 
           // Priority 2: Undo Rename
@@ -1410,10 +1213,12 @@ return res.json({
             await model.findByIdAndUpdate(id, { title: oldName })
             ctx.lastRename = null
             shouldRefresh = true;
-            return res.json({ reply: `Undo successful: Renamed back to "${oldName}". ✅`, shouldRefresh, activeBoardId: ctx.activeBoardId })
+            actionReply = `Undo successful: Renamed back to "${oldName}". ✅`;
+            break;
           }
 
-          return res.json({ reply: 'Nothing to undo.' })
+          actionReply = 'Nothing to undo.';
+          break;
         }
 
         /* ========== SHOW PROJECTS ========== */
@@ -1423,16 +1228,17 @@ return res.json({
             ? projects.map(p => `• ${p.title}`).join('\n')
             : 'No projects found.'
           
-          return res.json({ 
-            reply: `Here are your projects:\n${projectList}` 
-          })
+          actionReply = `Here are your projects:\n${projectList}`;
+          break;
         }
 
         /* ========== SHOW BUCKETS ========== */
         case 'show_buckets': {
           const project = await Board.findById(ctx.activeBoardId)
           if (!project) {
-             return listProjectsAndAsk(res, 'Please select a project first.')
+             actionReply = await listProjectsAndAsk('Please select a project first.');
+             stopProcessing = true;
+             break;
           }
 
           const buckets = await Bucket.find({ boardId: project._id })
@@ -1442,9 +1248,8 @@ return res.json({
              ? buckets.map(b => `• ${b.title}`).join('\n')
              : 'No buckets found.'
           
-          return res.json({ 
-            reply: `Here are the buckets in ${project.title}:\n${bucketList}` 
-          })
+          actionReply = `Here are the buckets in ${project.title}:\n${bucketList}`;
+          break;
         }
 
         /* ========== SHOW MEMBERS ========== */
@@ -1454,16 +1259,16 @@ return res.json({
              ? users.map(u => `• ${u.name}`).join('\n')
              : 'No members found.'
           
-          return res.json({
-            reply: `Here are the members:\n${userList}`
-          })
+          actionReply = `Here are the members:\n${userList}`;
+          break;
         }
 
       /* ========== SHOW TASKS ========== */
   case 'show_tasks': {
     const project = await Board.findById(ctx.activeBoardId)
     if (!project) {
-      finalReply = 'Please select a project first.'
+      actionReply = 'Please select a project first.';
+      stopProcessing = true; // stop?
       break
     }
 
@@ -1479,7 +1284,7 @@ return res.json({
     }
 
     if (!bucket) {
-      finalReply = 'No bucket found in the active project.'
+      actionReply = 'No bucket found in the active project.';
       break
     }
 
@@ -1490,9 +1295,8 @@ return res.json({
       ? tasks.map(t => `• ${t.title} [${t.priority || '-'}]`).join('\n')
       : 'No tasks found.'
 
-    return res.json({
-      reply: `Tasks in ${bucket.title}:\n${taskList}`
-    })
+    actionReply = `Tasks in ${bucket.title}:\n${taskList}`;
+    break;
   }
 
   /* =====================================================
@@ -1501,14 +1305,14 @@ return res.json({
   case 'show_sprint_view': {
     const project = await Board.findById(ctx.activeBoardId)
     if (!project) {
-      finalReply = 'Please select a project first.'
+      actionReply = 'Please select a project first.';
       break
     }
 
     const sprintData = await sprintScheduler(project._id)
     ctx.lastResult = sprintData
 
-    finalReply = ai.reply || 'Here is the sprint view.'
+    actionReply = ai.reply || 'Here is the sprint view.';
     break
   }
 
@@ -1517,7 +1321,7 @@ return res.json({
   ===================================================== */
   case 'show_user_day': {
     if (!data.user) {
-      finalReply = 'Which user should I check?'
+      actionReply = 'Which user should I check?';
       break
     }
 
@@ -1526,7 +1330,7 @@ return res.json({
     })
 
     if (!user) {
-      finalReply = `User "${data.user}" not found.`
+      actionReply = `User "${data.user}" not found.`;
       break
     }
 
@@ -1548,9 +1352,8 @@ return res.json({
         return `${index + 1}. ${task.title} (${activity})`
       })
     
-    return res.json({
-      reply: `Here is ${user.name}'s schedule for ${format(day, 'yyyy-MM-dd')}:\n${taskLines.join('\n')}`
-    })
+    actionReply = `Here is ${user.name}'s schedule for ${format(day, 'yyyy-MM-dd')}:\n${taskLines.join('\n')}`;
+    break;
   }
 
   /* =====================================================
@@ -1567,7 +1370,8 @@ return res.json({
     ctx.lastResult = tasks
     
     const taskList = tasks.map(t => `• ${t.title}`).join('\n')
-    return res.json({ reply: `Tasks for Today:\n${taskList}` })
+    actionReply = `Tasks for Today:\n${taskList}`;
+    break;
   }
 
   /* =====================================================
@@ -1583,25 +1387,41 @@ return res.json({
 
     ctx.lastResult = tasks
     const taskList = tasks.map(t => `• ${t.title}`).join('\n')
-    return res.json({ reply: `Tasks for Tomorrow:\n${taskList}` })
+    actionReply = `Tasks for Tomorrow:\n${taskList}`;
+    break;
   }
 
   case 'none':
   default:
-    // do nothing, reply already handled
+    // do nothing
     break
   }   // ✅ CLOSE switch
+
+  // Append action reply if it exists
+  if (actionReply) {
+      accumulatedReplies.push(actionReply);
+  }
+
   }   // ✅ CLOSE for-loop
 
   /* ===== FINAL RESPONSE (AFTER LOOP) ===== */
-  if (!responded) {
-    console.log('Final fallback response:', finalReply || ai?.reply || 'How can I help you with your project?');
+
+  // If we had actions that generated replies, join them.
+  let finalResponseText = '';
+
+  if (accumulatedReplies.length > 0) {
+      finalResponseText = accumulatedReplies.join('\n\n');
+  } else {
+      // Fallback to LLM reply if no backend actions generated output (e.g. general chitchat)
+      finalResponseText = ai?.reply || 'How can I help you with your project?';
+  }
+
+    console.log('Final fallback response:', finalResponseText);
     return res.json({
-      reply: finalReply || ai?.reply || 'How can I help you with your project?',
+      reply: finalResponseText,
       shouldRefresh,
       activeBoardId: ctx.activeBoardId
     });
-  }
 
   }
    catch (err) 
