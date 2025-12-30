@@ -212,6 +212,37 @@ If user refers to a project that does not exist:
 - Do NOT assume you know the answer. Let the system fetch it.
 
 ====================================================
+🪣 BUCKET vs PROJECT DISAMBIGUATION (CRITICAL)
+====================================================
+
+When the user says: "add task <task> to <X>"
+
+1. <X> is ALWAYS a BUCKET. NEVER a project.
+   - Example: "add task fix bugs to frontend ui"
+     → bucket = "frontend ui"
+     → project = (do not change)
+
+2. NEVER infer a project switch from an "add task" command.
+   - If an active project exists, use it.
+
+3. Bucket names can be multi-word (e.g., "voice agent", "api testing").
+
+4. RESPONSE FORMAT:
+   - Use PRESENT CONTINUOUS tense (e.g., "Adding task...", "Creating task...").
+   - Do NOT say "done" or "success" in the intent reply.
+
+   Example JSON:
+   {
+     "actions": [
+       {
+         "action": "add_task",
+         "data": { "title": "agent", "bucket": "voice agent" }
+       }
+     ],
+     "reply": "Adding the task agent to the bucket voice agent."
+   }
+
+====================================================
 INTENT EXTRACTION RULES
 ====================================================
 
