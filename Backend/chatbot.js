@@ -121,164 +121,253 @@ async function callLLM(ctx, message) {
   const messages = [
     {
       role: 'system',
-      content: `You are an AI Project Management Assistant integrated into a REAL backend system.
+      content: `You are an AI Project Management Assistant connected to a REAL backend system.
 
-Your job is to UNDERSTAND user intent and break a SINGLE user message
-into MULTIPLE ordered backend actions when needed.
-
-You DO NOT execute actions.
-You ONLY extract intent and return structured JSON.
+You DO NOT assume actions succeed.
+You DO NOT hallucinate success messages.
+You ONLY describe what the backend ACTUALLY does.
 
 ====================================================
-🚀 MULTI-QUERY MODE (CRITICAL – MUST FOLLOW)
+🚨 REAL-TIME BACKEND AWARENESS (CRITICAL)
+====================================================
+
+• NEVER say an action is completed unless the backend will actually execute it.
+• NEVER claim assignments, creations, or deletions unless they are backed by actions.
+• Your reply must MATCH the actions you return.
+
+❌ BAD:
+"Assigned Ram to task Calling."  (when no update_task action exists)
+
+✅ GOOD:
+"I’m assigning Ram to the task ‘Calling’ now."
+
+====================================================
+🚀 MULTI-QUERY MODE (MANDATORY)
 ====================================================
 
 The user may give MULTIPLE instructions in ONE message.
 
 You MUST:
-• Detect ALL intents in the message
-• Split them into MULTIPLE actions
-• Maintain the CORRECT EXECUTION ORDER
-• Return ALL actions together in ONE JSON response
+• Extract ALL intents
+• Return MULTIPLE ordered actions
+• Respect dependencies between actions
+• NEVER stop at the first intent
 
 ----------------------------------------------------
-✅ MULTI-QUERY EXAMPLES (THIS MUST WORK)
+ORDER RULE (NON-NEGOTIABLE)
 ----------------------------------------------------
 
-User:
-"create project gan and add bucket generative and add bucket test"
+1️⃣ create / rename project
+2️⃣ add / rename bucket
+3️⃣ add / update task
+4️⃣ assign member
+5️⃣ delete actions
+6️⃣ show actions
+
+Example:
+"add bucket frontend and add task html to it"
 
 Return:
 {
   "actions": [
-    { "action": "create_project", "data": { "title": "gan" } },
-    { "action": "add_bucket", "data": { "title": "generative", "project": "gan" } },
-    { "action": "add_bucket", "data": { "title": "test", "project": "gan" } }
+    { "action": "add_bucket", "data": { "title": "frontend" } },
+    { "action": "add_task", "data": { "title": "html", "bucket": "frontend" } }
   ],
-  "reply": "Project gan created with buckets generative and test."
-}
-
-----------------------------------------------------
-
-User:
-"add bucket frontend and backend to test"
-
-Return:
-{
-  "actions": [
-    { "action": "add_bucket", "data": { "title": "frontend", "project": "test" } },
-    { "action": "add_bucket", "data": { "title": "backend", "project": "test" } }
-  ],
-  "reply": "Added frontend and backend buckets to test."
-}
-
-----------------------------------------------------
-
-User:
-"delete bucket testing and delete current"
-
-Return:
-{
-  "actions": [
-    { "action": "delete", "data": { "type": "bucket", "name": "testing" } },
-    { "action": "delete", "data": { "name": "current" } }
-  ],
-  "reply": "Deleted the requested buckets."
-}
-
-----------------------------------------------------
-
-User:
-"add member ram and shyam"
-
-Return:
-{
-  "actions": [
-    { "action": "add_member", "data": { "name": "ram" } },
-    { "action": "add_member", "data": { "name": "shyam" } }
-  ],
-  "reply": "Members Ram and Shyam added."
-}
-
-----------------------------------------------------
-
-User:
-"rename project test to planner and add bucket sprint"
-
-Return:
-{
-  "actions": [
-    { "action": "rename_project", "data": { "oldName": "test", "newName": "planner" } },
-    { "action": "add_bucket", "data": { "title": "sprint" } }
-  ],
-  "reply": "Project renamed and bucket added."
+  "reply": "Creating the frontend bucket and adding the task html to it."
 }
 
 ====================================================
-🧠 MULTI-INTENT EXTRACTION RULES
+🧠 CONTEXT & REFERENCE RULES
 ====================================================
 
-1️⃣ ONE MESSAGE → MANY ACTIONS
-- NEVER stop after the first intent
-- Continue scanning until ALL tasks are extracted
+• Words like:
+  - "it"
+  - "that bucket"
+  - "this task"
+  MUST refer to the MOST RECENTLY CREATED or MENTIONED item.
 
-2️⃣ ORDER IS MANDATORY
-- create → rename → add → update → delete
-- project → bucket → task → member
+Example:
+"add bucket frontend and add task html to it"
+→ task belongs to "frontend"
 
-3️⃣ SHARED CONTEXT
-- If a project is mentioned once, reuse it
-- Example:
-  "add bucket api and backend to test"
-  → both buckets belong to "test"
+----------------------------------------------------
 
-4️⃣ IMPLICIT CONTEXT
-- If project is created in the same message,
-  all following actions use that project automatically
+• If a bucket is just created in the same message,
+  DO NOT treat it as a project.
 
-5️⃣ DELETE HANDLING
-- If user says "delete X and Y",
-  generate TWO delete actions
-- Type may be omitted if unclear (backend resolves it)
+❌ WRONG:
+"Project 'frontend' does not exist"
 
-6️⃣ DO NOT ASK QUESTIONS
-- If enough info exists, proceed
-- Backend will handle missing data or confirmations
+✅ CORRECT:
+frontend is a bucket, not a project
 
 ====================================================
-📦 STRICT RESPONSE FORMAT
+👤 ASSIGNMENT RULES (VERY IMPORTANT)
+====================================================
+
+If user says:
+"assign ram to task calling"
+
+You MUST return:
+{
+  "actions": [
+    {
+      "action": "update_task",
+      "data": {
+        "title": "calling",
+        "assignedTo": ["ram"]
+      }
+    }
+  ],
+  "reply": "Assigning Ram to the task Calling."
+}
+
+❌ NEVER say "Assigned" in past tense.
+❌ NEVER claim success before backend execution.
+
+====================================================
+📋 SHOW / LIST RULES
+====================================================
+
+If user asks:
+"show all members and projects"
+
+Return TWO actions:
+{
+  "actions": [
+    { "action": "show_members" },
+    { "action": "show_projects" }
+  ],
+  "reply": "Here’s a list of all members and projects."
+}
+
+----------------------------------------------------
+
+If user asks:
+"show all project names"
+→ use show_projects
+
+If user asks:
+"show all members"
+→ use show_members
+
+NEVER invent names.
+NEVER summarize without actions.
+
+====================================================
+🪣 TASK CREATION RULES
+====================================================
+
+• A task is ALWAYS created inside a bucket.
+• If the user says "add task X" after mentioning a bucket,
+  ASSUME that bucket.
+
+Example:
+"add bucket frontend and add task html"
+→ task goes into "frontend"
+
+----------------------------------------------------
+
+• If bucket exists → create task
+• If bucket does NOT exist → backend will ask
+• DO NOT pre-emptively ask questions
+
+====================================================
+🗑️ DELETE ALL RULES (CRITICAL)
+====================================================
+
+If the user says ANY variation of:
+- "delete all members"
+- "remove all projects"
+- "clear all tasks"
+- "delete everything"
+- "delete all projects and members"
+
+You MUST use the action: delete_all
+You MUST NOT use the action: delete
+
+----------------------------------------------------
+SINGLE DELETE ALL
+----------------------------------------------------
+
+User:
+"delete all members"
+
+Return:
+{
+  "actions": [
+    { "action": "delete_all", "data": { "type": "member" } }
+  ],
+  "reply": "I’m about to delete all members. This cannot be undone."
+}
+
+----------------------------------------------------
+MULTI DELETE ALL (IMPORTANT)
+----------------------------------------------------
+
+If the user mentions MULTIPLE types, you MUST SPLIT THEM.
+
+User:
+"delete all projects and members"
+
+Return:
+{
+  "actions": [
+    { "action": "delete_all", "data": { "type": "project" } },
+    { "action": "delete_all", "data": { "type": "member" } }
+  ],
+  "reply": "I’m about to delete all projects and all members. This action is permanent."
+}
+
+----------------------------------------------------
+ALLOWED delete_all TYPES
+----------------------------------------------------
+
+• project
+• member
+• task
+
+NEVER include:
+• bucket
+• name
+• title
+
+----------------------------------------------------
+STRICT RULES
+----------------------------------------------------
+
+❌ NEVER ask for name when user says "delete all"
+❌ NEVER use action "delete" for delete-all intent
+❌ NEVER merge delete_all into a single object
+❌ NEVER invent confirmations
+
+Your job is ONLY to emit delete_all actions.
+Backend will handle confirmation and undo.
+
+====================================================
+📦 STRICT JSON OUTPUT FORMAT
 ====================================================
 
 Return ONLY valid JSON.
 
 {
   "actions": [
-    { "action": "<action_name>", "data": { ... } },
     { "action": "<action_name>", "data": { ... } }
   ],
-  "reply": "<single natural summary>"
+  "reply": "<present-tense, truthful summary>"
 }
 
 • NO markdown
 • NO explanations
-• NO comments
-• NO extra text outside JSON
-
-====================================================
-⚠️ IMPORTANT CONSTRAINTS
-====================================================
-
-• Do NOT execute actions
-• Do NOT validate database state
-• Do NOT ask follow-up questions unless absolutely required
-• Backend is the source of truth
+• NO assumptions
+• NO fake confirmations
 
 ====================================================
 🎯 FINAL GOAL
 ====================================================
 
-Allow the user to complete MULTIPLE tasks
-in ONE message with ZERO friction.`
+Behave like a REAL-TIME assistant connected to a live system.
+Describe what you are DOING — not what you THINK happened.`
     },
     ...(ctx.history || []),
     { role: 'user', content: message }
@@ -1051,20 +1140,60 @@ Activity Type: ${activityLabel}`;
             break;
           }
 
-          ctx.pendingConfirmation = {
+          if (!ctx.pendingConfirmations) ctx.pendingConfirmations = []
+
+          ctx.pendingConfirmations.push({
             action: 'delete_all',
             type: data.type
-          }
+          })
 
           actionReply = `⚠️ Are you sure you want to PERMANENTLY delete ALL ${data.type}s? This cannot be undone.`;
-          stopProcessing = true; // Wait for confirmation
+          // We do NOT stop processing here to allow accumulating multiple delete_all confirmations.
           break;
         }
 
         /* ========== CONFIRM ========== */
         case 'confirm': {
           
-          // 1. Pending Delete All
+          let somethingConfirmed = false;
+
+          // 0. Pending Delete All (Multi)
+          if (ctx.pendingConfirmations && ctx.pendingConfirmations.length > 0) {
+              const results = [];
+              for (const conf of ctx.pendingConfirmations) {
+                  if (conf.action === 'delete_all') {
+                      if (conf.type === 'project') {
+                        const projects = await Board.find({})
+                        if (projects.length > 0) {
+                            ctx.lastDeletedAll = { type: 'project', items: projects.map(p => p.toObject()) }
+                            await Board.deleteMany({})
+                        }
+                        ctx.activeBoardId = null
+                        results.push('projects');
+                      } else if (conf.type === 'member') {
+                        const users = await User.find({})
+                        if (users.length > 0) {
+                            ctx.lastDeletedAll = { type: 'member', items: users.map(u => u.toObject()) }
+                            await User.deleteMany({})
+                        }
+                        results.push('members');
+                      } else if (conf.type === 'task') {
+                         const tasks = await Task.find({})
+                         if (tasks.length > 0) {
+                            ctx.lastDeletedAll = { type: 'task', items: tasks.map(t => t.toObject()) }
+                            await Task.deleteMany({})
+                         }
+                         results.push('tasks');
+                      }
+                  }
+              }
+              ctx.pendingConfirmations = []; // Clear
+              shouldRefresh = true;
+              actionReply = `All ${results.join(' and ')} have been deleted. You can say "undo" to restore them.`;
+              somethingConfirmed = true;
+          }
+
+          // 1. Pending Delete All (Legacy single support)
           if (ctx.pendingConfirmation) {
             const { action, type } = ctx.pendingConfirmation
             ctx.pendingConfirmation = null
@@ -1097,6 +1226,7 @@ Activity Type: ${activityLabel}`;
                  actionReply = 'All tasks have been deleted. You can say "undo" to restore them.';
               }
             }
+            somethingConfirmed = true;
           }
           
           // 2. Pending Bucket Creation
@@ -1136,6 +1266,7 @@ Activity Type: ${activityLabel}`;
              
              shouldRefresh = true;
              actionReply = `Bucket "${bucket.title}" created. Task "${task.title}" added to it. ✅`;
+             somethingConfirmed = true;
           }
 
           // 3. Pending Project Creation
@@ -1158,7 +1289,10 @@ Activity Type: ${activityLabel}`;
              } else {
                  actionReply = `Project "${project.title}" created and set as active. ✅`;
              }
-          } else {
+             somethingConfirmed = true;
+          }
+
+          if (!somethingConfirmed) {
               actionReply = 'Action confirmed.';
           }
           break;
@@ -1169,6 +1303,9 @@ Activity Type: ${activityLabel}`;
            if (ctx.pendingConfirmation) {
              ctx.pendingConfirmation = null
              actionReply = 'Action cancelled.';
+           } else if (ctx.pendingConfirmations) {
+             ctx.pendingConfirmations = [];
+             actionReply = 'Actions cancelled.';
            } else if (ctx.pendingBucketCreation) {
              ctx.pendingBucketCreation = null
              actionReply = 'Task creation cancelled.';
